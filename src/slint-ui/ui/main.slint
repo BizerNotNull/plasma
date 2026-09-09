@@ -1,0 +1,185 @@
+import { Button, ComboBox, Slider, ScrollView } from "std-widgets.slint";
+
+export struct OscillatorState {
+    waveform: int,
+    pitch: float,
+    fine: float,
+    phase: float,
+    phase-random: float,
+    pulse-width: float,
+    unison: float,
+    detune: float,
+    pan: float,
+    level: float,
+}
+
+component Parameter inherits VerticalLayout {
+    in property <string> label;
+    in property <string> unit;
+    in property <float> value;
+    in property <float> minimum: 0;
+    in property <float> maximum: 100;
+    callback edited(float);
+    spacing: 2px;
+    HorizontalLayout {
+        Text { text: root.label; color: #aeb8cb; font-size: 12px; }
+        Text {
+            text: "\{round(root.value * 10) / 10}\{root.unit}";
+            color: #eef3ff;
+            font-size: 12px;
+            horizontal-alignment: right;
+        }
+    }
+    Slider {
+        value: root.value;
+        minimum: root.minimum;
+        maximum: root.maximum;
+        changed(value) => { root.edited(value); }
+    }
+}
+
+component OscillatorCard inherits Rectangle {
+    in property <int> number;
+    in property <OscillatorState> state;
+    callback edited(int, float);
+    background: #171e2c;
+    border-color: #2b364c;
+    border-width: 1px;
+    border-radius: 14px;
+    min-width: 250px;
+    VerticalLayout {
+        padding: 20px;
+        spacing: 12px;
+        HorizontalLayout {
+            Text { text: "OSC 0\{root.number}"; color: #e9efff; font-size: 20px; font-weight: 700; }
+            Text { text: "SOURCE"; color: #7a8ba8; font-size: 10px; horizontal-alignment: right; vertical-alignment: center; }
+        }
+        ComboBox {
+            model: ["Sine", "Triangle", "Saw", "Pulse"];
+            current-index: root.state.waveform;
+            selected(value) => { root.edited(0, self.current-index); }
+        }
+        Parameter { label: "Semitone"; unit: " st"; minimum: -48; maximum: 48; value: root.state.pitch; edited(value) => { root.edited(1, round(value)); } }
+        Parameter { label: "Fine tune"; unit: " ct"; minimum: -100; maximum: 100; value: root.state.fine; edited(value) => { root.edited(2, value); } }
+        Rectangle { height: 1px; background: #2b364c; }
+        Parameter { label: "Phase"; unit: "°"; maximum: 360; value: root.state.phase; edited(value) => { root.edited(3, value); } }
+        Parameter { label: "Phase random"; unit: "%"; value: root.state.phase-random; edited(value) => { root.edited(4, value); } }
+        Parameter { label: "Pulse width (Pulse only)"; unit: "%"; minimum: 1; maximum: 99; value: root.state.pulse-width; edited(value) => { root.edited(5, value); } }
+        Rectangle { height: 1px; background: #2b364c; }
+        Parameter { label: "Unison"; unit: " voices"; minimum: 1; maximum: 4; value: root.state.unison; edited(value) => { root.edited(6, round(value)); } }
+        Parameter { label: "Unison detune"; unit: " ct"; value: root.state.detune; edited(value) => { root.edited(7, value); } }
+        Parameter { label: "Pan · L − / R +"; unit: "%"; minimum: -100; maximum: 100; value: root.state.pan; edited(value) => { root.edited(8, value); } }
+        Parameter { label: "Level"; unit: "%"; value: root.state.level; edited(value) => { root.edited(9, value); } }
+    }
+}
+
+component AuditionKey inherits Rectangle {
+    in property <string> label;
+    in property <bool> sharp;
+    in property <bool> active;
+    in property <bool> available;
+    callback clicked();
+    min-width: 42px;
+    height: 78px;
+    border-radius: 7px;
+    background: root.active ? #65e6c4 : root.sharp ? #202a40 : #dce5f4;
+    border-color: root.active ? #a5ffe6 : #3b4a65;
+    border-width: root.active ? 2px : 1px;
+    opacity: root.available ? 1 : 0.45;
+    Text {
+        text: root.label;
+        color: root.active ? #102c29 : root.sharp ? #dce5f4 : #26344c;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        font-weight: 600;
+        font-size: 13px;
+    }
+    TouchArea { enabled: root.available; clicked => { root.clicked(); } }
+    accessible-role: button;
+    accessible-label: root.label + (root.active ? " playing, click to stop" : " click to play");
+    accessible-action-default => { if root.available { root.clicked(); } }
+}
+
+export component MainWindow inherits Window {
+    title: "PLASMA · Three-oscillator synthesizer";
+    preferred-width: 1100px;
+    preferred-height: 800px;
+    min-width: 920px;
+    min-height: 600px;
+    background: #0d1320;
+    default-font-family: "Segoe UI";
+    in property <[OscillatorState]> oscillators;
+    in property <string> audio-status: "Starting audio…";
+    in property <string> control-error;
+    in property <bool> audio-ready: false;
+    in property <int> active-note: -1;
+    in property <float> volume: 25;
+    callback parameter-edited(int, int, float);
+    callback volume-edited(float);
+    callback audition(int);
+    callback stop();
+
+    VerticalLayout {
+        padding: 24px;
+        spacing: 18px;
+        HorizontalLayout {
+            VerticalLayout {
+                spacing: 4px;
+                Text { text: "PLASMA"; color: #eff5ff; font-size: 32px; font-weight: 800; }
+                Text { text: "THREE OSCILLATORS  /  ONE INSTRUMENT"; color: #7f91ae; font-size: 11px; }
+            }
+            Text { text: "●  " + (root.audio-ready ? "AUDIO ONLINE" : "AUDIO OFFLINE"); color: root.audio-ready ? #65e6c4 : #ffa994; horizontal-alignment: right; vertical-alignment: center; font-size: 12px; }
+        }
+        ScrollView {
+            viewport-width: self.width;
+            VerticalLayout {
+                padding-right: 14px;
+                spacing: 18px;
+                HorizontalLayout {
+                    spacing: 16px;
+                    for oscillator[index] in root.oscillators: OscillatorCard {
+                        number: index + 1;
+                        state: oscillator;
+                        edited(field, value) => { root.parameter-edited(index, field, value); }
+                    }
+                }
+                Rectangle {
+                    background: #171e2c;
+                    border-radius: 14px;
+                    VerticalLayout {
+                        padding: 20px;
+                        spacing: 14px;
+                        HorizontalLayout {
+                            Text { text: "AUDITION"; color: #eef3ff; font-size: 15px; font-weight: 700; }
+                            Text { text: root.active-note < 0 ? "Silent · click a key to play" : "Playing · click again to stop"; color: #aeb8cb; horizontal-alignment: right; font-size: 12px; }
+                            Button { text: "Stop all"; clicked => { root.stop(); } }
+                        }
+                        HorizontalLayout {
+                            spacing: 6px;
+                            for key[index] in ["C4", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B", "C5"]: AuditionKey {
+                                label: key;
+                                sharp: index == 1 || index == 3 || index == 6 || index == 8 || index == 10;
+                                active: root.active-note == index + 60;
+                                available: root.audio-ready;
+                                clicked => { root.audition(index + 60); }
+                            }
+                        }
+                        Text { text: "Monophonic · keys latch until stopped. Phase and random phase apply on the next note."; color: #7f91ae; font-size: 11px; wrap: word-wrap; }
+                    }
+                }
+                Rectangle {
+                    background: #171e2c;
+                    border-radius: 14px;
+                    VerticalLayout {
+                        padding: 20px;
+                        spacing: 10px;
+                        Parameter { label: "MASTER VOLUME"; unit: "%"; value: root.volume; edited(value) => { root.volume-edited(value); } }
+                        Text { text: root.audio-status; color: root.audio-ready ? #8cdbc7 : #ffa994; font-size: 12px; wrap: word-wrap; }
+                        if root.control-error != "": Text { text: "Control error: " + root.control-error; color: #ffa994; font-size: 12px; wrap: word-wrap; }
+                        Text { text: "Start quietly. Output includes headroom and a short note fade. No effects or envelope controls."; color: #7f91ae; font-size: 11px; wrap: word-wrap; }
+                    }
+                }
+            }
+        }
+    }
+}

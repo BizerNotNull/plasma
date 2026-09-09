@@ -1,0 +1,9 @@
+[package]
+name = "plasma-kernel"
+version = "0.1.0"
+edition = "2024"
+description = "Three-oscillator stereo synthesis kernel"
+license = "Apache-2.0"
+
+[lib]
+path = "lib.rs"
