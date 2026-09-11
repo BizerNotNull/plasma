@@ -18,9 +18,23 @@
 //! summed without clipping; callers must leave headroom. Saw/Pulse use PolyBLEP;
 //! Triangle is a basic, non-band-limited waveform. Pulse can contain DC at duties
 //! other than 50%. Parameters are copied in at control rate, not shared atomically.
+//!
+//! [`Voice`] wraps the unchanged oscillator bank with ADSR amplitude, a free or
+//! retriggered LFO, a resonant stereo lowpass and a fixed modulation matrix.
+//! Targets 0..27 are the nine oscillator knobs per oscillator (pitch, fine,
+//! phase, random phase, pulse width, unison, detune, pan, level); 27 is master
+//! gain and 28..36 are the eight [`VoiceParams::globals`] controls. Both sources
+//! may route to every target with signed normalized depths. Filter coefficients
+//! and master gain are smoothed over 3 ms; modulation runs at approximately
+//! 1 kHz, without recomputing unchanged oscillator coefficients.
 
 mod dsp;
 pub mod osc;
+pub mod voice;
+pub use voice::{
+    GLOBAL_COUNT, GLOBAL_DEFAULTS, LfoWave, TARGET_COUNT, Telemetry, Voice, VoiceParams,
+    denormalize, normalize, target_range,
+};
 
 pub use osc::{OscillatorParams, Waveform};
 

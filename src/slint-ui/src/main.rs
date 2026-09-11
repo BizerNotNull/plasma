@@ -1,9 +1,12 @@
 use std::{rc::Rc, time::Duration};
 
-use plasma_api::{AudioOutput, OscillatorParams, Synth, Waveform};
+use plasma_api::{LfoWave, OscillatorParams, Synth, TARGET_COUNT, Waveform};
 use slint::{ComponentHandle, Model, VecModel};
 
 slint::include_modules!();
+
+mod audio;
+mod performance;
 
 fn oscillator_state(params: OscillatorParams) -> OscillatorState {
     OscillatorState {
@@ -74,8 +77,16 @@ fn show_result(window: &MainWindow, result: Result<(), String>) -> bool {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let performance = Rc::new(performance::Performance::new()?);
     let synth = Synth::new();
+    performance.mark("synth_ready_ms");
+    let audio_start = if performance.no_audio {
+        Err("Disabled for performance isolation".into())
+    } else {
+        audio::AudioWorker::start(synth.clone())
+    };
     let window = MainWindow::new()?;
+    performance.mark("window_created_ms");
     let initial = (0..3)
         .map(|index| synth.params(index).map(oscillator_state))
         .collect::<Result<Vec<_>, _>>()?;
@@ -85,13 +96,111 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // so the control and engine cannot start with different values.
     synth.set_volume(0.25)?;
     window.set_volume(25.0);
-
-    let audio = match AudioOutput::start(synth.clone()) {
-        Ok(output) => {
-            window.set_audio_status(output.description().into());
-            window.set_audio_ready(true);
-            Some(Rc::new(output))
+    let params = synth.voice_params()?;
+    let globals = Rc::new(VecModel::from(params.globals.to_vec()));
+    let env_depths = Rc::new(VecModel::from(params.routes[0].to_vec()));
+    let lfo_depths = Rc::new(VecModel::from(params.routes[1].to_vec()));
+    let effective = Rc::new(VecModel::from(params.normalized().to_vec()));
+    window.set_globals(globals.clone().into());
+    window.set_env_depths(env_depths.clone().into());
+    window.set_lfo_depths(lfo_depths.clone().into());
+    window.set_effective_values(effective.clone().into());
+    window.set_lfo_wave(0);
+    window.set_lfo_retrigger(params.lfo_retrigger);
+    window.on_global_edited({
+        let weak = window.as_weak();
+        let synth = synth.clone();
+        move |index, value| {
+            let Some(window) = weak.upgrade() else { return };
+            let result = usize::try_from(index)
+                .map_err(|_| "Invalid global index".to_owned())
+                .and_then(|index| synth.set_global(index, value));
+            show_result(&window, result);
+            if let Ok(params) = synth.voice_params() {
+                for (i, value) in params.globals.into_iter().enumerate() {
+                    if globals.row_data(i) != Some(value) {
+                        globals.set_row_data(i, value);
+                    }
+                }
+            }
         }
+    });
+    window.global::<Modulation>().on_routed({
+        let weak = window.as_weak();
+        let synth = synth.clone();
+        move |target, source, depth| {
+            let Some(window) = weak.upgrade() else { return };
+            let result = match (usize::try_from(target), usize::try_from(source)) {
+                (Ok(target), Ok(source)) => synth.set_route(target, source, depth),
+                _ => Err("Invalid modulation source or target".into()),
+            };
+            show_result(&window, result);
+            if let Ok(params) = synth.voice_params() {
+                for i in 0..TARGET_COUNT {
+                    if env_depths.row_data(i) != Some(params.routes[0][i]) {
+                        env_depths.set_row_data(i, params.routes[0][i]);
+                    }
+                    if lfo_depths.row_data(i) != Some(params.routes[1][i]) {
+                        lfo_depths.set_row_data(i, params.routes[1][i]);
+                    }
+                }
+            }
+        }
+    });
+    window.on_lfo_wave_edited({
+        let weak = window.as_weak();
+        let synth = synth.clone();
+        move |wave| {
+            let Some(window) = weak.upgrade() else { return };
+            let result = match wave {
+                0 => Ok(LfoWave::Sine),
+                1 => Ok(LfoWave::Triangle),
+                2 => Ok(LfoWave::Saw),
+                3 => Ok(LfoWave::Square),
+                _ => Err("Unknown LFO waveform".to_owned()),
+            }
+            .and_then(|wave| synth.set_lfo_wave(wave));
+            if show_result(&window, result) {
+                window.set_lfo_wave(wave);
+            }
+        }
+    });
+    window.on_lfo_retrigger_edited({
+        let weak = window.as_weak();
+        let synth = synth.clone();
+        move |retrigger| {
+            let Some(window) = weak.upgrade() else { return };
+            if show_result(&window, synth.set_lfo_retrigger(retrigger)) {
+                window.set_lfo_retrigger(retrigger);
+            }
+        }
+    });
+    let modulation_monitor = slint::Timer::default();
+    modulation_monitor.start(slint::TimerMode::Repeated, Duration::from_millis(33), {
+        let weak = window.as_weak();
+        let synth = synth.clone();
+        let mut previous = synth.telemetry();
+        move || {
+            let Some(window) = weak.upgrade() else { return };
+            let telemetry = synth.telemetry();
+            if telemetry.env != previous.env {
+                window.set_env_value(telemetry.env);
+            }
+            if telemetry.lfo != previous.lfo {
+                window.set_lfo_value(telemetry.lfo);
+            }
+            for (i, value) in telemetry.effective.into_iter().enumerate() {
+                if value != previous.effective[i] {
+                    effective.set_row_data(i, value);
+                }
+            }
+            previous = telemetry;
+        }
+    });
+
+    performance.mark("controls_ready_ms");
+    let audio = match audio_start {
+        Ok(output) => Some(Rc::new(output)),
         Err(error) => {
             window.set_audio_status(
                 format!("Audio unavailable: {error}. Connect or enable an output device, then restart PLASMA. You can still edit the instrument.").into(),
@@ -99,6 +208,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             None
         }
     };
+    performance.mark("audio_dispatched_ms");
 
     window.on_parameter_edited({
         let weak = window.as_weak();
@@ -169,27 +279,41 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let output = Rc::clone(output);
         let weak = window.as_weak();
         let synth = synth.clone();
-        audio_monitor.start(slint::TimerMode::Repeated, Duration::from_millis(250), move || {
+        let performance = performance.clone();
+        audio_monitor.start(slint::TimerMode::Repeated, Duration::from_millis(33), move || {
             let Some(window) = weak.upgrade() else { return };
-            if window.get_audio_ready() {
-                if let Some(error) = output.error() {
-                    window.set_audio_ready(false);
-                    window.set_audio_status(format!("Audio stopped: {error}. Check the output device and restart PLASMA.").into());
-                    if show_result(&window, synth.note_off()) {
-                        window.set_active_note(-1);
+            while let Ok(event) = output.events.try_recv() {
+                match event {
+                    Ok(description) => {
+                        performance.mark("audio_ready_ms");
+                        window.set_audio_status(description.into());
+                        window.set_audio_ready(true);
+                    }
+                    Err(error) => {
+                        performance.mark("audio_failed_ms");
+                        window.set_audio_ready(false);
+                        window.set_audio_status(format!("Audio unavailable: {error}. Check the output device and restart PLASMA.").into());
+                        if show_result(&window, synth.note_off()) {
+                            window.set_active_note(-1);
+                        }
                     }
                 }
             }
         });
     }
 
+    performance.attach(&window)?;
+    performance.mark("event_loop_enter_ms");
     let result = window.run();
     audio_monitor.stop();
+    drop(audio_monitor);
+    modulation_monitor.stop();
     if let Err(error) = synth.note_off() {
         eprintln!("Could not stop the instrument during shutdown: {error}");
     }
     // Keep the real device stream alive throughout the event loop, then stop it.
     drop(audio);
     result?;
+    performance.report()?;
     Ok(())
 }

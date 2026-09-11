@@ -1,0 +1,116 @@
+use plasma_kernel::{LfoWave, TARGET_COUNT, Voice, VoiceParams, Waveform};
+
+#[test]
+fn release_survives_old_gate_and_retrigger_preserves_envelope_level() {
+    let mut voice = Voice::new(48000.0, 7).unwrap();
+    let mut params = VoiceParams::default();
+    params.globals = [0.001, 0.001, 1.0, 0.2, 1.0, 0.0, 18000.0, 0.1];
+    voice.set_params(params).unwrap();
+    voice.note_on(440.0).unwrap();
+    for _ in 0..1000 {
+        voice.next_frame();
+    }
+    voice.note_off();
+    for _ in 0..480 {
+        voice.next_frame();
+    }
+    assert!(voice.telemetry().env > 0.9);
+    let before = voice.telemetry().env;
+    voice.note_on(440.0).unwrap();
+    assert_eq!(voice.telemetry().env, before);
+    voice.note_off();
+    for _ in 0..10000 {
+        voice.next_frame();
+    }
+    assert!(voice.is_silent());
+    assert_eq!(voice.next_frame(), [0.0; 2]);
+}
+
+#[test]
+fn free_lfo_runs_while_idle_and_retrigger_resets_phase() {
+    let mut voice = Voice::new(48000.0, 1).unwrap();
+    let mut p = VoiceParams::default();
+    p.lfo_wave = LfoWave::Saw;
+    p.lfo_retrigger = false;
+    p.globals[4] = 1.0;
+    voice.set_params(p).unwrap();
+    for _ in 0..12000 {
+        voice.next_frame();
+    }
+    voice.note_on(220.0).unwrap();
+    voice.next_frame();
+    assert!((voice.telemetry().lfo + 0.5).abs() < 0.001);
+    p.lfo_retrigger = true;
+    p.globals[5] = 0.25;
+    voice.set_params(p).unwrap();
+    voice.note_on(220.0).unwrap();
+    voice.next_frame();
+    assert!((voice.telemetry().lfo + 0.5).abs() < 0.001);
+    voice.note_on(220.0).unwrap();
+    voice.next_frame();
+    assert!((voice.telemetry().lfo + 0.5).abs() < 0.001);
+}
+
+#[test]
+fn dual_routes_clamp_without_changing_bases_and_rejection_is_atomic() {
+    let mut voice = Voice::new(48000.0, 5).unwrap();
+    let mut p = VoiceParams::default();
+    p.globals[0] = 0.001;
+    p.globals[2] = 1.0;
+    p.lfo_wave = LfoWave::Square;
+    p.routes[0] = [1.0; TARGET_COUNT];
+    p.routes[1] = [1.0; TARGET_COUNT];
+    voice.set_params(p).unwrap();
+    voice.note_on(440.0).unwrap();
+    for _ in 0..100 {
+        voice.next_frame();
+    }
+    let t = voice.telemetry();
+    assert!(t.effective.iter().all(|v| (0.0..=1.0).contains(v)));
+    assert_eq!(t.effective[27], 1.0);
+    assert_eq!(voice.params(), &p);
+    let mut invalid = p;
+    invalid.routes[1][35] = f32::NAN;
+    assert!(voice.set_params(invalid).is_err());
+    assert_eq!(voice.params(), &p);
+    invalid = p;
+    invalid.globals[6] = 0.0;
+    assert!(voice.set_params(invalid).is_err());
+    assert_eq!(voice.params(), &p);
+    p.routes[0] = [0.0; TARGET_COUNT];
+    p.routes[1] = [0.0; TARGET_COUNT];
+    voice.set_params(p).unwrap();
+    voice.next_frame();
+    assert_eq!(voice.telemetry().effective[27], 0.25);
+}
+
+#[test]
+fn resonant_filter_remains_finite_during_extreme_cutoff_sweeps() {
+    for sample_rate in [8000.0, 44100.0, 96000.0] {
+        let mut voice = Voice::new(sample_rate, 3).unwrap();
+        let mut p = VoiceParams::default();
+        p.oscillators[0].waveform = Waveform::Pulse;
+        p.oscillators[0].pulse_width = 0.01;
+        p.globals[0] = 0.001;
+        p.globals[2] = 1.0;
+        p.globals[7] = 1.0;
+        p.globals[4] = 30.0;
+        p.lfo_wave = LfoWave::Square;
+        p.routes[1][34] = 1.0;
+        voice.set_params(p).unwrap();
+        voice.note_on(110.0).unwrap();
+        for _ in 0..96000 {
+            assert!(
+                voice
+                    .next_frame()
+                    .iter()
+                    .all(|v| v.is_finite() && v.abs() <= 1.0)
+            );
+        }
+        voice.note_off();
+        for _ in 0..96000 {
+            voice.next_frame();
+        }
+        assert_eq!(voice.next_frame(), [0.0; 2]);
+    }
+}

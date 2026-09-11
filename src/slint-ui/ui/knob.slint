@@ -1,0 +1,135 @@
+export global Modulation {
+    in property <[float]> env-depths;
+    in property <[float]> lfo-depths;
+    in property <[float]> effective-values;
+    in-out property <int> selected-source: 0;
+    in-out property <int> selected-target: 34;
+    callback routed(int, int, float);
+    public function attach(target: int) {
+        self.selected-target = target;
+        let depth = self.selected-source == 0 ? self.env-depths[target] : self.lfo-depths[target];
+        if depth == 0 { self.routed(target, self.selected-source, 0.25); }
+    }
+}
+
+export component Knob inherits Rectangle {
+    in property <string> label;
+    in property <string> unit;
+    in property <int> target: -1;
+    in property <float> minimum: 0;
+    in property <float> maximum: 100;
+    in property <float> value: 0;
+    in property <float> default-value: 0;
+    in property <bool> logarithmic: false;
+    in property <color> accent: #9caeb9;
+    callback edited(float);
+    private property <float> normalized: clamp(root.logarithmic ? log(max(root.value, root.minimum) / root.minimum, root.maximum / root.minimum) : (root.value - root.minimum) / max(root.maximum - root.minimum, 0.0001), 0, 1);
+    private property <float> env-depth: root.target >= 0 ? Modulation.env-depths[root.target] : 0;
+    private property <float> lfo-depth: root.target >= 0 ? Modulation.lfo-depths[root.target] : 0;
+    private property <float> effective: root.target >= 0 ? Modulation.effective-values[root.target] : root.normalized;
+    private property <float> drag-start-value;
+    private property <float> drag-start-y;
+    private property <bool> fine: false;
+    public function from-normalized(n: float) -> float {
+        return root.logarithmic ? root.minimum * pow(root.maximum / root.minimum, clamp(n, 0, 1)) : root.minimum + clamp(n, 0, 1) * (root.maximum - root.minimum);
+    }
+    min-width: 70px;
+    preferred-width: 78px;
+    height: 91px;
+    background: touch.has-hover ? #252a30 : #1b1f24;
+    border-radius: 4px;
+    border-width: 1px;
+    border-color: root.target >= 0 && Modulation.selected-target == root.target ? #6d818d : #292f35;
+    touch := TouchArea {
+        width: parent.width;
+        height: parent.height - 16px;
+        mouse-cursor: ns-resize;
+        pointer-event(event) => {
+            if event.button == PointerEventButton.left && event.kind == PointerEventKind.down {
+                root.drag-start-value = root.normalized;
+                root.drag-start-y = self.mouse-y / 1px;
+                root.fine = event.modifiers.shift;
+                if root.target >= 0 { Modulation.selected-target = root.target; }
+            }
+        }
+        moved => {
+            if self.pressed {
+                root.edited(root.from-normalized(root.drag-start-value + (root.drag-start-y - self.mouse-y / 1px) / 150 * (root.fine ? 0.1 : 1)));
+            }
+        }
+        scroll-event(event) => {
+            if event.delta-y != 0 { root.edited(root.from-normalized(root.normalized + (event.delta-y > 0 ? 0.01 : -0.01))); }
+            return accept;
+        }
+        double-clicked => { root.edited(root.default-value); }
+    }
+    Text { y: 3px; width: parent.width; height: 14px; text: root.label; color: #b5c0c8; font-size: 10px; horizontal-alignment: center; }
+    dial := Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: 18px;
+        width: 44px;
+        height: 44px;
+        for tick[index] in 25: Rectangle {
+            x: 21px + cos(135deg + index * 270deg / 24) * 20px - 1px;
+            y: 21px + sin(135deg + index * 270deg / 24) * 20px - 1px;
+            width: 2px; height: 2px;
+            background: index / 24 <= root.normalized ? root.accent : #394048;
+        }
+        for tick[index] in (root.env-depth != 0 ? 25 : 0): Rectangle {
+            x: 21px + cos(135deg + index * 270deg / 24) * 24px - 1px;
+            y: 21px + sin(135deg + index * 270deg / 24) * 24px - 1px;
+            width: 2px; height: 2px;
+            visible: root.env-depth != 0 && index / 24 >= clamp(min(root.normalized, root.normalized + root.env-depth), 0, 1) && index / 24 <= clamp(max(root.normalized, root.normalized + root.env-depth), 0, 1);
+            background: #53e2b4;
+        }
+        for tick[index] in (root.lfo-depth != 0 ? 25 : 0): Rectangle {
+            x: 21px + cos(135deg + index * 270deg / 24) * 27px - 1px;
+            y: 21px + sin(135deg + index * 270deg / 24) * 27px - 1px;
+            width: 2px; height: 2px;
+            visible: root.lfo-depth != 0 && index / 24 >= clamp(root.normalized - abs(root.lfo-depth), 0, 1) && index / 24 <= clamp(root.normalized + abs(root.lfo-depth), 0, 1);
+            background: #659fff;
+        }
+        Rectangle {
+            x: 6px; y: 6px; width: 30px; height: 30px; border-radius: 15px;
+            background: @linear-gradient(145deg, #444c53, #242a30); border-width: 1px; border-color: #53606b;
+            Rectangle {
+                x: 13px + cos(135deg + root.normalized * 270deg) * 10px;
+                y: 13px + sin(135deg + root.normalized * 270deg) * 10px;
+                width: 3px; height: 3px; border-radius: 2px; background: #f2f6f8;
+            }
+        }
+        Rectangle {
+            x: 20px + cos(135deg + root.effective * 270deg) * 20px - 2px;
+            y: 20px + sin(135deg + root.effective * 270deg) * 20px - 2px;
+            width: 4px; height: 4px; border-radius: 2px; background: #ffffff;
+            visible: root.env-depth != 0 || root.lfo-depth != 0;
+        }
+    }
+    Text {
+        y: 61px; height: 14px; width: parent.width;
+        text: root.unit == " s" && root.value < 1 ? "\{round(root.value * 1000)} ms" : "\{round(root.value * 100) / 100}\{root.unit}";
+        color: #e1e8ed; font-size: 10px; horizontal-alignment: center;
+    }
+    if root.target >= 0: Rectangle {
+        y: parent.height - 15px; height: 14px; width: parent.width;
+        background: assign.has-hover ? #38474f : #252c32;
+        HorizontalLayout {
+            padding-left: 4px; padding-right: 4px;
+            Text { text: root.env-depth != 0 ? "E" : "·"; color: #53e2b4; font-size: 9px; }
+            Text { text: Modulation.selected-source == 0 ? "+ ENV" : "+ LFO"; color: Modulation.selected-source == 0 ? #53e2b4 : #659fff; font-size: 9px; horizontal-alignment: center; }
+            Text { text: root.lfo-depth != 0 ? "L" : "·"; color: #659fff; font-size: 9px; }
+        }
+        assign := TouchArea { mouse-cursor: pointer; clicked => { Modulation.attach(root.target); } }
+        accessible-role: button;
+        accessible-label: "Assign selected modulation source to " + root.label;
+        accessible-action-default => { Modulation.attach(root.target); }
+    }
+    accessible-role: slider;
+    accessible-value-minimum: root.minimum;
+    accessible-value-maximum: root.maximum;
+    accessible-value: root.value;
+    accessible-label: root.label;
+    accessible-action-increment => { root.edited(root.from-normalized(root.normalized + 0.01)); }
+    accessible-action-decrement => { root.edited(root.from-normalized(root.normalized - 0.01)); }
+    accessible-action-set-value(v) => { root.edited(clamp(v.to-float(), root.minimum, root.maximum)); }
+}

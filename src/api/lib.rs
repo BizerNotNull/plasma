@@ -1,115 +1,276 @@
-//! Shared monophonic synth controls and real system audio.
-//!
-//! Control callers may block each other briefly. The audio callback owns its
-//! kernel bank and only tries the control mutex once per buffer: on contention
-//! it keeps the previous fixed-size snapshot. It never allocates or waits.
-//! Note commands are latest-state controls, not an event queue; commands between
-//! audio buffers can coalesce. Every observed note-on retriggers kernel phases.
-
+//! Monophonic synthesis and real system audio. Control writers serialize on a
+//! mutex; the audio callback reads a fixed atomic snapshot once per buffer and
+//! never locks, waits or allocates. Concurrent updates defer one buffer. Note
+//! commands are latest-state controls and can coalesce between audio buffers.
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+pub use plasma_kernel::{
+    GLOBAL_COUNT, GLOBAL_DEFAULTS, LfoWave, OscillatorParams, TARGET_COUNT, Telemetry, Voice,
+    VoiceParams, Waveform, denormalize, normalize, target_range,
+};
 use std::sync::{
     Arc, Mutex,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
 };
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use plasma_kernel::{OSCILLATOR_COUNT, OscillatorBank};
-pub use plasma_kernel::{OscillatorParams, Waveform};
-
-const HEADROOM: f32 = 0.8 / OSCILLATOR_COUNT as f32;
-const RAMP_SECONDS: f32 = 0.005;
-
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 struct Controls {
-    oscillators: [OscillatorParams; OSCILLATOR_COUNT],
-    volume: f32,
+    params: VoiceParams,
     note: Option<u8>,
     generation: u64,
 }
-
-impl Default for Controls {
+const WORDS: usize = 115;
+struct Published {
+    version: AtomicU64,
+    words: [AtomicU64; WORDS],
+}
+impl Default for Published {
     fn default() -> Self {
-        Self {
-            oscillators: std::array::from_fn(|index| OscillatorParams {
-                level: if index == 0 { 1.0 } else { 0.0 },
-                ..Default::default()
+        let result = Self {
+            version: AtomicU64::new(0),
+            words: std::array::from_fn(|_| AtomicU64::new(0)),
+        };
+        result.store(Controls::default());
+        result
+    }
+}
+impl Published {
+    fn store(&self, c: Controls) {
+        let mut words = [0; WORDS];
+        let mut n = 0;
+        for p in c.params.oscillators {
+            for v in [
+                p.waveform as u8 as f64,
+                p.pitch,
+                p.fine,
+                p.phase,
+                p.phase_random,
+                p.pulse_width,
+                p.unison as f64,
+                p.detune,
+                p.pan,
+                p.level,
+            ] {
+                words[n] = v.to_bits();
+                n += 1;
+            }
+        }
+        words[n] = (c.params.volume as f64).to_bits();
+        n += 1;
+        for v in c.params.globals {
+            words[n] = (v as f64).to_bits();
+            n += 1;
+        }
+        words[n] = c.params.lfo_wave as u64;
+        n += 1;
+        words[n] = u64::from(c.params.lfo_retrigger);
+        n += 1;
+        for v in c.params.routes.into_iter().flatten() {
+            words[n] = (v as f64).to_bits();
+            n += 1;
+        }
+        words[n] = c.note.map_or(128, u64::from);
+        words[n + 1] = c.generation;
+        self.version.fetch_add(1, Ordering::SeqCst);
+        for (dst, word) in self.words.iter().zip(words) {
+            dst.store(word, Ordering::SeqCst);
+        }
+        self.version.fetch_add(1, Ordering::SeqCst);
+    }
+    fn load(&self) -> Option<Controls> {
+        let version = self.version.load(Ordering::SeqCst);
+        if version & 1 != 0 {
+            return None;
+        }
+        let words: [u64; WORDS] = std::array::from_fn(|i| self.words[i].load(Ordering::SeqCst));
+        if self.version.load(Ordering::SeqCst) != version {
+            return None;
+        }
+        let mut c = Controls::default();
+        let mut n = 0;
+        for p in &mut c.params.oscillators {
+            let v: [f64; 10] = std::array::from_fn(|i| f64::from_bits(words[n + i]));
+            n += 10;
+            *p = OscillatorParams {
+                waveform: match v[0] as u8 {
+                    1 => Waveform::Triangle,
+                    2 => Waveform::Saw,
+                    3 => Waveform::Pulse,
+                    _ => Waveform::Sine,
+                },
+                pitch: v[1],
+                fine: v[2],
+                phase: v[3],
+                phase_random: v[4],
+                pulse_width: v[5],
+                unison: v[6] as u8,
+                detune: v[7],
+                pan: v[8],
+                level: v[9],
+            };
+        }
+        c.params.volume = f64::from_bits(words[n]) as f32;
+        n += 1;
+        for v in &mut c.params.globals {
+            *v = f64::from_bits(words[n]) as f32;
+            n += 1;
+        }
+        c.params.lfo_wave = match words[n] {
+            1 => LfoWave::Triangle,
+            2 => LfoWave::Saw,
+            3 => LfoWave::Square,
+            _ => LfoWave::Sine,
+        };
+        n += 1;
+        c.params.lfo_retrigger = words[n] != 0;
+        n += 1;
+        for v in c.params.routes.iter_mut().flatten() {
+            *v = f64::from_bits(words[n]) as f32;
+            n += 1;
+        }
+        c.note = if words[n] < 128 {
+            Some(words[n] as u8)
+        } else {
+            None
+        };
+        c.generation = words[n + 1];
+        Some(c)
+    }
+}
+struct Meters {
+    values: [AtomicU32; TARGET_COUNT + 2],
+}
+impl Default for Meters {
+    fn default() -> Self {
+        let meters = Self {
+            values: std::array::from_fn(|_| AtomicU32::new(0)),
+        };
+        meters.store(Telemetry::default());
+        meters
+    }
+}
+impl Meters {
+    fn store(&self, t: Telemetry) {
+        self.values[0].store(t.env.to_bits(), Ordering::Relaxed);
+        self.values[1].store(t.lfo.to_bits(), Ordering::Relaxed);
+        for (dst, v) in self.values[2..].iter().zip(t.effective) {
+            dst.store(v.to_bits(), Ordering::Relaxed);
+        }
+    }
+    fn load(&self) -> Telemetry {
+        Telemetry {
+            env: f32::from_bits(self.values[0].load(Ordering::Relaxed)),
+            lfo: f32::from_bits(self.values[1].load(Ordering::Relaxed)),
+            effective: std::array::from_fn(|i| {
+                f32::from_bits(self.values[i + 2].load(Ordering::Relaxed))
             }),
-            volume: 0.25,
-            note: None,
-            generation: 0,
         }
     }
 }
-
-/// Cloneable control handle. Clones address the same synth state.
+/// Cloneable control handle. Telemetry is real DSP state, sampled per buffer;
+/// individual meter values are atomic, but a whole meter frame is approximate.
 #[derive(Clone, Default)]
 pub struct Synth {
     controls: Arc<Mutex<Controls>>,
+    published: Arc<Published>,
+    meters: Arc<Meters>,
 }
-
 impl Synth {
     pub fn new() -> Self {
         Self::default()
     }
-
-    pub fn params(&self, index: usize) -> Result<OscillatorParams, String> {
-        self.controls
-            .lock()
-            .map_err(|_| "Synth control lock was poisoned".to_owned())?
-            .oscillators
-            .get(index)
-            .copied()
-            .ok_or_else(|| plasma_kernel::Error::InvalidOscillatorIndex.to_string())
-    }
-
-    /// Invalid updates leave shared state unchanged. Kernel validation is the
-    /// single source of truth, including finite-number checks and index bounds.
-    pub fn set_params(&self, index: usize, params: OscillatorParams) -> Result<(), String> {
-        let mut validator = OscillatorBank::new(48_000.0, 0).map_err(|e| e.to_string())?;
-        validator
-            .set_params(index, params)
-            .map_err(|e| e.to_string())?;
-        self.controls
-            .lock()
-            .map_err(|_| "Synth control lock was poisoned".to_owned())?
-            .oscillators[index] = params;
-        Ok(())
-    }
-
-    pub fn set_volume(&self, value: f32) -> Result<(), String> {
-        if !value.is_finite() || !(0.0..=1.0).contains(&value) {
-            return Err("Volume must be finite and between 0 and 1".to_owned());
-        }
-        self.controls
-            .lock()
-            .map_err(|_| "Synth control lock was poisoned".to_owned())?
-            .volume = value;
-        Ok(())
-    }
-
-    /// Starts/retriggers one MIDI note. Repeated calls with the same note still
-    /// retrigger. Phase resets wait for the short fade-out if already sounding.
-    pub fn note_on(&self, note: u8) -> Result<(), String> {
-        if note > 127 {
-            return Err("MIDI note must be between 0 and 127".to_owned());
-        }
-        let mut controls = self
+    fn update(&self, f: impl FnOnce(&mut Controls) -> Result<(), String>) -> Result<(), String> {
+        let mut guard = self
             .controls
             .lock()
             .map_err(|_| "Synth control lock was poisoned".to_owned())?;
-        controls.note = Some(note);
-        controls.generation = controls.generation.wrapping_add(1);
+        let mut next = *guard;
+        f(&mut next)?;
+        next.params.validate().map_err(|e| e.to_string())?;
+        *guard = next;
+        self.published.store(next);
         Ok(())
     }
-
-    /// Releases to exact silence over at most five milliseconds after the
-    /// callback observes this command. No audio thread needs to be stopped.
-    pub fn note_off(&self) -> Result<(), String> {
-        self.controls
+    pub fn voice_params(&self) -> Result<VoiceParams, String> {
+        Ok(self
+            .controls
             .lock()
             .map_err(|_| "Synth control lock was poisoned".to_owned())?
-            .note = None;
-        Ok(())
+            .params)
+    }
+    pub fn params(&self, index: usize) -> Result<OscillatorParams, String> {
+        self.voice_params()?
+            .oscillators
+            .get(index)
+            .copied()
+            .ok_or_else(|| "Invalid oscillator index".to_owned())
+    }
+    pub fn set_params(&self, index: usize, params: OscillatorParams) -> Result<(), String> {
+        self.update(|c| {
+            *c.params
+                .oscillators
+                .get_mut(index)
+                .ok_or("Invalid oscillator index")? = params;
+            Ok(())
+        })
+    }
+    pub fn set_volume(&self, value: f32) -> Result<(), String> {
+        self.update(|c| {
+            c.params.volume = value;
+            Ok(())
+        })
+    }
+    pub fn set_global(&self, index: usize, value: f32) -> Result<(), String> {
+        self.update(|c| {
+            *c.params
+                .globals
+                .get_mut(index)
+                .ok_or("Invalid global index")? = value;
+            Ok(())
+        })
+    }
+    pub fn set_lfo_wave(&self, wave: LfoWave) -> Result<(), String> {
+        self.update(|c| {
+            c.params.lfo_wave = wave;
+            Ok(())
+        })
+    }
+    pub fn set_lfo_retrigger(&self, retrigger: bool) -> Result<(), String> {
+        self.update(|c| {
+            c.params.lfo_retrigger = retrigger;
+            Ok(())
+        })
+    }
+    /// Both sources can address every target, including source controls.
+    pub fn set_route(&self, target: usize, source: usize, depth: f32) -> Result<(), String> {
+        self.update(|c| {
+            *c.params
+                .routes
+                .get_mut(source)
+                .and_then(|r| r.get_mut(target))
+                .ok_or("Invalid modulation source or target")? = depth;
+            Ok(())
+        })
+    }
+    pub fn telemetry(&self) -> Telemetry {
+        self.meters.load()
+    }
+    pub fn note_on(&self, note: u8) -> Result<(), String> {
+        if note > 127 {
+            return Err("MIDI note must be between 0 and 127".into());
+        }
+        self.update(|c| {
+            c.note = Some(note);
+            c.generation = c.generation.wrapping_add(1);
+            Ok(())
+        })
+    }
+    /// Starts the configured ADSR release. The audio stream remains running.
+    pub fn note_off(&self) -> Result<(), String> {
+        self.update(|c| {
+            c.note = None;
+            Ok(())
+        })
     }
 }
 
@@ -190,33 +351,33 @@ where
     let channels = usize::from(config.channels);
     let seed = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_or(1, |duration| duration.as_nanos() as u64);
-    let mut renderer = Renderer {
-        bank: OscillatorBank::new(f64::from(config.sample_rate.0), seed)
-            .map_err(|e| e.to_string())?,
-        controls: Controls::default(),
-        active_generation: 0,
-        gain: 0.0,
-        gain_step: HEADROOM / (config.sample_rate.0 as f32 * RAMP_SECONDS).max(1.0),
-    };
+        .map_or(1, |d| d.as_nanos() as u64);
+    let mut voice = Voice::new(f64::from(config.sample_rate.0), seed).map_err(|e| e.to_string())?;
+    let mut previous = Controls::default();
     device
         .build_output_stream(
             config,
             move |output: &mut [T], _: &cpal::OutputCallbackInfo| {
-                // Release the guard before DSP; contention defers controls one buffer.
-                let snapshot = synth.controls.try_lock().ok().map(|guard| *guard);
-                if let Some(snapshot) = snapshot {
-                    renderer.update(snapshot);
+                if let Some(snapshot) = synth.published.load() {
+                    let _ = voice.set_params(snapshot.params);
+                    if let Some(note) = snapshot.note {
+                        if snapshot.generation != previous.generation {
+                            let _ = voice
+                                .note_on(440.0 * 2.0_f64.powf((f64::from(note) - 69.0) / 12.0));
+                        }
+                    } else if previous.note.is_some() {
+                        voice.note_off();
+                    }
+                    previous = snapshot;
                 }
                 let mut frames = output.chunks_exact_mut(channels);
                 for frame in &mut frames {
-                    let [left, right] = renderer.next_frame();
+                    let [left, right] = voice.next_frame();
                     if channels == 1 {
                         frame[0] = T::from_sample((left + right) * 0.5);
                     } else {
                         frame[0] = T::from_sample(left);
                         frame[1] = T::from_sample(right);
-                        // Only the front L/R pair is driven on surround devices.
                         for sample in &mut frame[2..] {
                             *sample = T::from_sample(0.0);
                         }
@@ -225,59 +386,10 @@ where
                 for sample in frames.into_remainder() {
                     *sample = T::from_sample(0.0);
                 }
+                synth.meters.store(voice.telemetry());
             },
             move |_| failed.store(true, Ordering::Relaxed),
             None,
         )
         .map_err(|e| format!("Cannot create audio output stream: {e}"))
-}
-
-struct Renderer {
-    bank: OscillatorBank,
-    controls: Controls,
-    active_generation: u64,
-    gain: f32,
-    gain_step: f32,
-}
-
-impl Renderer {
-    fn update(&mut self, controls: Controls) {
-        for (index, params) in controls.oscillators.iter().enumerate() {
-            if *params != self.controls.oscillators[index] {
-                // Already validated by the control thread; no formatting here.
-                let _ = self.bank.set_params(index, *params);
-            }
-        }
-        self.controls = controls;
-    }
-
-    fn next_frame(&mut self) -> [f32; 2] {
-        let retrigger = self.active_generation != self.controls.generation;
-        if self.gain == 0.0 && retrigger {
-            if let Some(note) = self.controls.note {
-                let frequency = 440.0 * 2.0_f64.powf((f64::from(note) - 69.0) / 12.0);
-                let _ = self.bank.note_on(frequency);
-                self.active_generation = self.controls.generation;
-            }
-        }
-        let target =
-            if self.controls.note.is_some() && self.active_generation == self.controls.generation {
-                self.controls.volume * HEADROOM
-            } else {
-                0.0
-            };
-        if self.gain < target {
-            self.gain = (self.gain + self.gain_step).min(target);
-        } else {
-            self.gain = (self.gain - self.gain_step).max(target);
-        }
-        if self.gain == 0.0 {
-            return [0.0; 2];
-        }
-        let frame = self.bank.next_frame();
-        [
-            (frame[0] * self.gain).clamp(-1.0, 1.0),
-            (frame[1] * self.gain).clamp(-1.0, 1.0),
-        ]
-    }
 }

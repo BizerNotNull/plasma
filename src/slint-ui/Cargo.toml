@@ -11,3 +11,8 @@ slint = "=1.14.1"
 
 [build-dependencies]
 slint-build = "=1.14.1"
+
+# Keep assertions and debug symbols, but do not run the renderer/DSP unoptimized.
+# Incremental application builds remain available in the development profile.
+[profile.dev]
+opt-level = 1
