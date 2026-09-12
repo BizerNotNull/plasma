@@ -109,10 +109,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let globals = Rc::new(VecModel::from(params.globals.to_vec()));
     let env_depths = Rc::new(VecModel::from(params.routes[0].to_vec()));
     let lfo_depths = Rc::new(VecModel::from(params.routes[1].to_vec()));
+    let mod_env_depths = Rc::new(VecModel::from(params.routes[2].to_vec()));
     let effective = Rc::new(VecModel::from(params.normalized().to_vec()));
     window.set_globals(globals.clone().into());
     window.set_env_depths(env_depths.clone().into());
     window.set_lfo_depths(lfo_depths.clone().into());
+    window.set_mod_env_depths(mod_env_depths.clone().into());
     window.set_effective_values(effective.clone().into());
     window.set_lfo_wave(0);
     window.set_lfo_retrigger(params.lfo_retrigger);
@@ -151,6 +153,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     if lfo_depths.row_data(i) != Some(params.routes[1][i]) {
                         lfo_depths.set_row_data(i, params.routes[1][i]);
+                    }
+                    if mod_env_depths.row_data(i) != Some(params.routes[2][i]) {
+                        mod_env_depths.set_row_data(i, params.routes[2][i]);
                     }
                 }
             }
@@ -197,6 +202,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             if telemetry.lfo != previous.lfo {
                 window.set_lfo_value(telemetry.lfo);
+            }
+            if telemetry.mod_env != previous.mod_env {
+                window.set_mod_env_value(telemetry.mod_env);
             }
             for (i, value) in telemetry.effective.into_iter().enumerate() {
                 if value != previous.effective[i] {

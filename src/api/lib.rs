@@ -7,8 +7,8 @@ use events::{ConsumerLease, NoteQueue};
 mod tests;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 pub use plasma_kernel::{
-    GLOBAL_COUNT, GLOBAL_DEFAULTS, LfoWave, OscillatorParams, POLYPHONY, PolySynth, TARGET_COUNT,
-    Telemetry, Voice, VoiceParams, Waveform, denormalize, normalize, target_range,
+    GLOBAL_COUNT, GLOBAL_DEFAULTS, LfoWave, OscillatorParams, POLYPHONY, PolySynth, SOURCE_COUNT,
+    TARGET_COUNT, Telemetry, Voice, VoiceParams, Waveform, denormalize, normalize, target_range,
 };
 use std::sync::{
     Arc, Mutex,
@@ -20,7 +20,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 struct Controls {
     params: VoiceParams,
 }
-const WORDS: usize = 113;
+const WORDS: usize =
+    plasma_kernel::OSCILLATOR_COUNT * 10 + 3 + GLOBAL_COUNT + SOURCE_COUNT * TARGET_COUNT;
 struct Published {
     version: AtomicU64,
     words: [AtomicU64; WORDS],
@@ -131,7 +132,7 @@ impl Published {
     }
 }
 struct Meters {
-    values: [AtomicU32; TARGET_COUNT + 2],
+    values: [AtomicU32; TARGET_COUNT + SOURCE_COUNT],
 }
 impl Default for Meters {
     fn default() -> Self {
@@ -146,7 +147,8 @@ impl Meters {
     fn store(&self, t: Telemetry) {
         self.values[0].store(t.env.to_bits(), Ordering::Relaxed);
         self.values[1].store(t.lfo.to_bits(), Ordering::Relaxed);
-        for (dst, v) in self.values[2..].iter().zip(t.effective) {
+        self.values[2].store(t.mod_env.to_bits(), Ordering::Relaxed);
+        for (dst, v) in self.values[SOURCE_COUNT..].iter().zip(t.effective) {
             dst.store(v.to_bits(), Ordering::Relaxed);
         }
     }
@@ -154,8 +156,9 @@ impl Meters {
         Telemetry {
             env: f32::from_bits(self.values[0].load(Ordering::Relaxed)),
             lfo: f32::from_bits(self.values[1].load(Ordering::Relaxed)),
+            mod_env: f32::from_bits(self.values[2].load(Ordering::Relaxed)),
             effective: std::array::from_fn(|i| {
-                f32::from_bits(self.values[i + 2].load(Ordering::Relaxed))
+                f32::from_bits(self.values[i + SOURCE_COUNT].load(Ordering::Relaxed))
             }),
         }
     }
@@ -235,7 +238,7 @@ impl Synth {
             Ok(())
         })
     }
-    /// Both sources can address every target, including source controls.
+    /// AMP ENV, LFO and MOD ENV can address every target, including source controls.
     pub fn set_route(&self, target: usize, source: usize, depth: f32) -> Result<(), String> {
         self.update(|c| {
             *c.params

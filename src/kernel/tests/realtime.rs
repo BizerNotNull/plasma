@@ -51,7 +51,11 @@ impl Drop for Tracking {
 fn realtime_render_and_control_transitions_do_not_allocate() {
     let mut voice = Voice::new(48000.0, 42).unwrap();
     let mut params = VoiceParams::default();
-    params.routes = [[0.025; TARGET_COUNT], [-0.02; TARGET_COUNT]];
+    params.routes = [
+        [0.025; TARGET_COUNT],
+        [-0.02; TARGET_COUNT],
+        [0.015; TARGET_COUNT],
+    ];
     params.globals[3] = 0.001;
     for osc in &mut params.oscillators {
         osc.unison = 4;
@@ -91,7 +95,11 @@ fn realtime_render_and_control_transitions_do_not_allocate() {
 fn polyphonic_events_stealing_and_rendering_do_not_allocate() {
     let mut synth = PolySynth::new(48000.0, 42).unwrap();
     let mut params = VoiceParams::default();
-    params.routes = [[0.025; TARGET_COUNT], [-0.02; TARGET_COUNT]];
+    params.routes = [
+        [0.025; TARGET_COUNT],
+        [-0.02; TARGET_COUNT],
+        [0.015; TARGET_COUNT],
+    ];
     params.globals[3] = 0.001;
     for osc in &mut params.oscillators {
         osc.unison = 4;

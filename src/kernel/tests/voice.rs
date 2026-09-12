@@ -4,7 +4,7 @@ use plasma_kernel::{LfoWave, TARGET_COUNT, Voice, VoiceParams, Waveform};
 fn release_survives_old_gate_and_retrigger_preserves_envelope_level() {
     let mut voice = Voice::new(48000.0, 7).unwrap();
     let mut params = VoiceParams::default();
-    params.globals = [0.001, 0.001, 1.0, 0.2, 1.0, 0.0, 18000.0, 0.1];
+    params.globals[..8].copy_from_slice(&[0.001, 0.001, 1.0, 0.2, 1.0, 0.0, 18000.0, 0.1]);
     voice.set_params(params).unwrap();
     voice.note_on(440.0).unwrap();
     for _ in 0..1000 {
@@ -113,4 +113,72 @@ fn resonant_filter_remains_finite_during_extreme_cutoff_sweeps() {
         }
         assert_eq!(voice.next_frame(), [0.0; 2]);
     }
+}
+
+#[test]
+fn mod_envelope_changes_timbre_only_when_routed_without_changing_amp() {
+    let mut fast = Voice::new(48000.0, 11).unwrap();
+    let mut slow = Voice::new(48000.0, 11).unwrap();
+    let mut params = VoiceParams::default();
+    params.oscillators[0].waveform = Waveform::Saw;
+    params.globals[..4].copy_from_slice(&[0.001, 0.001, 1.0, 0.2]);
+    params.globals[6] = 100.0;
+    params.globals[8..].copy_from_slice(&[0.001, 0.001, 1.0, 0.001]);
+    fast.set_params(params).unwrap();
+    let mut slow_params = params;
+    slow_params.globals[8..].copy_from_slice(&[1.0, 1.0, 0.2, 10.0]);
+    slow.set_params(slow_params).unwrap();
+    fast.note_on(220.0).unwrap();
+    slow.note_on(220.0).unwrap();
+    for _ in 0..4800 {
+        assert_eq!(fast.next_frame(), slow.next_frame());
+    }
+    assert!(fast.telemetry().mod_env > 0.99);
+    assert!(slow.telemetry().mod_env < 0.11);
+
+    params.routes[2][34] = 0.7;
+    slow_params.routes[2][34] = 0.7;
+    fast.set_params(params).unwrap();
+    slow.set_params(slow_params).unwrap();
+    let mut fast_energy = 0.0_f64;
+    let mut slow_energy = 0.0_f64;
+    for _ in 0..4800 {
+        fast_energy += (fast.next_frame()[0] as f64).powi(2);
+        slow_energy += (slow.next_frame()[0] as f64).powi(2);
+        assert_eq!(fast.telemetry().env, slow.telemetry().env);
+    }
+    assert!(fast_energy > slow_energy * 2.0);
+    fast.note_off();
+    slow.note_off();
+    for _ in 0..480 {
+        fast.next_frame();
+        slow.next_frame();
+    }
+    assert_eq!(fast.telemetry().mod_env, 0.0);
+    assert!(slow.telemetry().mod_env > 0.19);
+    assert_eq!(fast.telemetry().env, slow.telemetry().env);
+    assert!(fast.telemetry().env > 0.9);
+    let before = slow.telemetry().mod_env;
+    slow.note_on(220.0).unwrap();
+    assert_eq!(slow.telemetry().mod_env, before);
+    slow.next_frame();
+    assert!(slow.telemetry().mod_env > before);
+}
+
+#[test]
+fn mod_envelope_self_route_uses_previous_control_tick() {
+    let mut voice = Voice::new(8000.0, 12).unwrap();
+    let mut params = VoiceParams::default();
+    params.routes[2][36] = 0.5;
+    voice.set_params(params).unwrap();
+    voice.note_on(220.0).unwrap();
+    let base = params.normalized()[36];
+    for _ in 0..8 {
+        voice.next_frame();
+        assert_eq!(voice.telemetry().effective[36], base);
+    }
+    let previous = voice.telemetry().mod_env;
+    voice.next_frame();
+    assert!((voice.telemetry().effective[36] - (base + previous * 0.5)).abs() < 1e-6);
+    assert!(voice.telemetry().mod_env > previous);
 }

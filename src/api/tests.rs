@@ -121,3 +121,63 @@ fn clone_writers_preserve_each_notes_order_and_validate_midi() {
     renderer.render(&mut [[0.0; 2]; 1024]);
     assert_eq!(renderer.active_voice_count(), 0);
 }
+
+#[test]
+fn mod_envelope_shapes_filter_independently_through_audio_renderer() {
+    let synth = Synth::new();
+    let baseline = Synth::new();
+    for controls in [&synth, &baseline] {
+        controls.set_global(0, 0.001).unwrap();
+        controls.set_global(1, 0.001).unwrap();
+        controls.set_global(2, 1.0).unwrap();
+        controls.set_global(3, 0.01).unwrap();
+        controls.set_global(6, 100.0).unwrap();
+        controls.set_global(8, 0.001).unwrap();
+        controls.set_global(9, 0.02).unwrap();
+        controls.set_global(10, 0.0).unwrap();
+        controls.set_global(11, 10.0).unwrap();
+    }
+    synth.set_route(34, 2, 0.8).unwrap();
+    let mut renderer = AudioRenderer::new(synth.clone(), 48_000.0, 42).unwrap();
+    let mut reference = AudioRenderer::new(baseline.clone(), 48_000.0, 42).unwrap();
+    // Settle the initial cutoff smoothing before measuring the note transient.
+    renderer.render(&mut [[0.0; 2]; 4096]);
+    reference.render(&mut [[0.0; 2]; 4096]);
+    synth.note_on(69, 127).unwrap();
+    baseline.note_on(69, 127).unwrap();
+    let mut actual = [[0.0; 2]; 256];
+    let mut dry = actual;
+    renderer.render(&mut actual);
+    reference.render(&mut dry);
+    let energy = |frames: &[[f32; 2]]| {
+        frames
+            .iter()
+            .flatten()
+            .map(|v| f64::from(*v).powi(2))
+            .sum::<f64>()
+    };
+    assert!(energy(&actual) > energy(&dry) * 2.0);
+    let attack = synth.telemetry();
+    assert!(attack.mod_env > 0.5);
+    assert_eq!(attack.env, baseline.telemetry().env);
+    for _ in 0..20 {
+        renderer.render(&mut actual);
+    }
+    let held = synth.telemetry();
+    assert_eq!(held.env, 1.0);
+    assert_eq!(held.mod_env, 0.0);
+    assert!(held.effective[34] < attack.effective[34]);
+
+    // A long, nonzero modulation tail must not keep a silent AMP voice alive.
+    synth.set_global(10, 1.0).unwrap();
+    for _ in 0..20 {
+        renderer.render(&mut actual);
+    }
+    assert!(synth.telemetry().mod_env > 0.9);
+    synth.note_off(69).unwrap();
+    for _ in 0..4 {
+        renderer.render(&mut actual);
+    }
+    assert_eq!(renderer.active_voice_count(), 0);
+    assert!(actual.iter().flatten().all(|v| *v == 0.0));
+}

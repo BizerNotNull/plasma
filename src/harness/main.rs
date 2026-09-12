@@ -1,5 +1,6 @@
 use plasma_kernel::{
-    LfoWave, OscillatorParams, TARGET_COUNT, Voice, VoiceParams, Waveform, target_range,
+    GLOBAL_COUNT, LfoWave, OscillatorParams, SOURCE_COUNT, TARGET_COUNT, Voice, VoiceParams,
+    Waveform, target_range,
 };
 use serde::{Deserialize, Serialize};
 use std::error::Error;
@@ -19,7 +20,7 @@ const OSC_FIELDS: [&str; 9] = [
     "pan",
     "level",
 ];
-const GLOBAL_FIELDS: [&str; 9] = [
+const GLOBAL_FIELDS: [&str; GLOBAL_COUNT + 1] = [
     "volume",
     "attack",
     "decay",
@@ -29,6 +30,10 @@ const GLOBAL_FIELDS: [&str; 9] = [
     "lfo_phase",
     "cutoff",
     "resonance",
+    "mod_attack",
+    "mod_decay",
+    "mod_sustain",
+    "mod_release",
 ];
 type Result<T, E = Box<dyn Error>> = std::result::Result<T, E>;
 
@@ -97,7 +102,7 @@ struct Patch {
     waveforms: [OscWave; 3],
     lfo_wave: ModWave,
     lfo_retrigger: bool,
-    routes: [Vec<f64>; 2],
+    routes: [Vec<f64>; SOURCE_COUNT],
 }
 
 #[derive(Deserialize)]
@@ -244,6 +249,7 @@ fn describe() -> Result<()> {
         "controls": controls,
         "waveforms": ["sine", "triangle", "saw", "pulse"],
         "lfo_waves": ["sine", "triangle", "saw", "square"],
+        "sources": ["amp_env", "lfo", "mod_env"],
     });
     let mut stdout = std::io::stdout().lock();
     serde_json::to_writer(&mut stdout, &description)?;
@@ -350,7 +356,7 @@ fn run() -> Result<()> {
     }
     if first == "--help" || first == "-h" {
         println!(
-            "Usage: plasma-render --describe | plasma-render REQUEST.json OUTPUT.wav\nRenders unclipped float32 stereo WAV; gate and duration round to the nearest frame.\nSample rate: 8000..192000 Hz. Maximum duration: 30 seconds. Maximum request: 65536 bytes.\nRoutes are [ENV, LFO], each with 36 signed depths in [-1, 1]."
+            "Usage: plasma-render --describe | plasma-render REQUEST.json OUTPUT.wav\nRenders unclipped float32 stereo WAV; gate and duration round to the nearest frame.\nSample rate: 8000..192000 Hz. Maximum duration: 30 seconds. Maximum request: 65536 bytes.\nRoutes are [AMP ENV, LFO, MOD ENV], each with {TARGET_COUNT} signed depths in [-1, 1]."
         );
         return Ok(());
     }

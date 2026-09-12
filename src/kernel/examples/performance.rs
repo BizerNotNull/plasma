@@ -6,7 +6,7 @@
 //! Buffers, parameter variants and timings are allocated before measurement;
 //! output validation, checksums, sorting and CSV output happen outside timing.
 //! Budget overruns are simulated callback deadlines, not observed device xruns.
-use plasma_kernel::{OscillatorBank, TARGET_COUNT, Voice, VoiceParams, Waveform};
+use plasma_kernel::{OscillatorBank, SOURCE_COUNT, TARGET_COUNT, Voice, VoiceParams, Waveform};
 use std::{error::Error, hint::black_box, time::Instant};
 
 const SEED: u64 = 0x706c_6173_6d61_0042;
@@ -97,9 +97,9 @@ fn parameters(patch: Patch) -> [VoiceParams; 2] {
         params.routes[1][18] = 0.04;
     }
     if matches!(patch, Patch::Dense) {
-        for source in 0..2 {
+        for source in 0..SOURCE_COUNT {
             for target in 0..TARGET_COUNT {
-                // Both sources route to every destination. Small signed depths
+                // All sources route to every destination. Small signed depths
                 // keep the patch audible while exercising clamp/round/log paths.
                 params.routes[source][target] = if (source + target) % 2 == 0 {
                     0.035

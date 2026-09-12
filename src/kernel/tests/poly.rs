@@ -3,7 +3,7 @@ use plasma_kernel::{POLYPHONY, PolySynth, VoiceParams, Waveform};
 fn synth(seed: u64) -> PolySynth {
     let mut synth = PolySynth::new(48000.0, seed).unwrap();
     let mut params = VoiceParams::default();
-    params.globals = [0.001, 0.001, 1.0, 0.01, 1.0, 0.0, 18000.0, 0.1];
+    params.globals[..8].copy_from_slice(&[0.001, 0.001, 1.0, 0.01, 1.0, 0.0, 18000.0, 0.1]);
     synth.set_params(params).unwrap();
     synth
 }
@@ -146,7 +146,7 @@ fn full_polyphonic_mix_stays_finite_and_bounded_under_modulation() {
         let mut synth = PolySynth::new(sample_rate, 8).unwrap();
         let mut params = VoiceParams::default();
         params.volume = 1.0;
-        params.globals = [0.001, 0.001, 1.0, 0.001, 30.0, 0.0, 20000.0, 1.0];
+        params.globals[..8].copy_from_slice(&[0.001, 0.001, 1.0, 0.001, 30.0, 0.0, 20000.0, 1.0]);
         for osc in &mut params.oscillators {
             osc.level = 1.0;
             osc.unison = 4;
@@ -173,4 +173,55 @@ fn full_polyphonic_mix_stays_finite_and_bounded_under_modulation() {
         advance(&mut synth, 2000);
         assert_eq!(synth.next_frame(), [0.0; 2]);
     }
+}
+
+#[test]
+fn mod_envelopes_are_per_voice_and_reassigned_slots_start_fresh() {
+    let mut synth = PolySynth::new(48000.0, 13).unwrap();
+    let mut params = VoiceParams::default();
+    params.globals[..4].copy_from_slice(&[0.001, 0.001, 1.0, 0.001]);
+    params.globals[8..].copy_from_slice(&[1.0, 0.1, 1.0, 10.0]);
+    params.routes[2][34] = -0.5;
+    synth.set_params(params).unwrap();
+    synth.note_on(60, 127).unwrap();
+    advance(&mut synth, 4800);
+    assert!((synth.telemetry().mod_env - 0.1).abs() < 0.001);
+    synth.note_on(64, 127).unwrap();
+    assert_eq!(synth.telemetry().mod_env, 0.0);
+    advance(&mut synth, 2400);
+    assert!((synth.telemetry().mod_env - 0.05).abs() < 0.001);
+    synth.note_off(64).unwrap();
+    advance(&mut synth, 240);
+    assert_eq!(synth.active_voice_count(), 1);
+    assert!((synth.telemetry().mod_env - 0.155).abs() < 0.001);
+    assert!(synth.telemetry().effective[34] < params.normalized()[34] - 0.07);
+    synth.note_on(67, 127).unwrap();
+    assert_eq!(synth.telemetry().mod_env, 0.0);
+    advance(&mut synth, 240);
+    assert!((synth.telemetry().mod_env - 0.005).abs() < 0.001);
+}
+
+#[test]
+fn long_mod_release_does_not_retain_amp_silent_slots() {
+    let mut synth = PolySynth::new(48000.0, 14).unwrap();
+    let mut params = VoiceParams::default();
+    params.globals[..4].copy_from_slice(&[0.001, 0.001, 1.0, 0.001]);
+    params.globals[8..].copy_from_slice(&[0.001, 0.001, 1.0, 10.0]);
+    params.routes[2][34] = -0.5;
+    synth.set_params(params).unwrap();
+    for note in 60..68 {
+        synth.note_on(note, 127).unwrap();
+    }
+    advance(&mut synth, 1000);
+    assert!(synth.telemetry().mod_env > 0.99);
+    synth.all_notes_off();
+    advance(&mut synth, 240);
+    assert_eq!(synth.active_voice_count(), 0);
+    assert_eq!(synth.next_frame(), [0.0; 2]);
+    assert_eq!(synth.telemetry().mod_env, 0.0);
+    synth.note_on(72, 127).unwrap();
+    assert_eq!(synth.telemetry().mod_env, 0.0);
+    advance(&mut synth, 1000);
+    assert_eq!(synth.active_voice_count(), 1);
+    assert!(synth.telemetry().mod_env > 0.99);
 }

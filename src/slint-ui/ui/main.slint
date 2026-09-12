@@ -135,6 +135,7 @@ component EnvelopeGraph inherits Rectangle {
     in property <float> decay;
     in property <float> sustain;
     in property <float> release;
+    in property <color> trace: #53e2b4;
     private property <float> total: root.attack + root.decay + root.release + 0.3;
     background: #10191c;
     border-color: #304a44;
@@ -144,7 +145,7 @@ component EnvelopeGraph inherits Rectangle {
     Path {
         x: 7px; y: 7px; width: parent.width - 14px; height: parent.height - 14px;
         viewbox-width: 1000; viewbox-height: 100;
-        stroke: #53e2b4; stroke-width: 2px;
+        stroke: root.trace; stroke-width: 2px;
         MoveTo { x: 0; y: 100; }
         LineTo { x: root.attack / root.total * 1000; y: 0; }
         LineTo { x: (root.attack + root.decay) / root.total * 1000; y: (1 - root.sustain) * 100; }
@@ -188,14 +189,16 @@ export component MainWindow inherits Window {
     in property <[bool]> held-notes;
     in-out property <int> velocity: 127;
     in property <float> volume: 25;
-    in property <[float]> globals: [0.01, 0.2, 0.7, 0.4, 1, 0, 18000, 0.1];
+    in property <[float]> globals: [0.01, 0.2, 0.7, 0.4, 1, 0, 18000, 0.1, 0.01, 0.2, 0.7, 0.4];
     in property <int> lfo-wave: 0;
     in property <bool> lfo-retrigger: true;
     in property <[float]> env-depths <=> Modulation.env-depths;
     in property <[float]> lfo-depths <=> Modulation.lfo-depths;
+    in property <[float]> mod-env-depths <=> Modulation.mod-env-depths;
     in property <[float]> effective-values <=> Modulation.effective-values;
     in property <float> env-value;
     in property <float> lfo-value;
+    in property <float> mod-env-value;
     callback parameter-edited(int, int, float);
     callback volume-edited(float);
     callback audition(int);
@@ -203,7 +206,7 @@ export component MainWindow inherits Window {
     callback global-edited(int, float);
     callback lfo-wave-edited(int);
     callback lfo-retrigger-edited(bool);
-    private property <[string]> destinations: ["OSC 1 · Semitone", "OSC 1 · Fine", "OSC 1 · Phase", "OSC 1 · Phase random", "OSC 1 · Pulse width", "OSC 1 · Unison", "OSC 1 · Detune", "OSC 1 · Pan", "OSC 1 · Level", "OSC 2 · Semitone", "OSC 2 · Fine", "OSC 2 · Phase", "OSC 2 · Phase random", "OSC 2 · Pulse width", "OSC 2 · Unison", "OSC 2 · Detune", "OSC 2 · Pan", "OSC 2 · Level", "OSC 3 · Semitone", "OSC 3 · Fine", "OSC 3 · Phase", "OSC 3 · Phase random", "OSC 3 · Pulse width", "OSC 3 · Unison", "OSC 3 · Detune", "OSC 3 · Pan", "OSC 3 · Level", "Master · Volume", "ENV · Attack", "ENV · Decay", "ENV · Sustain", "ENV · Release", "LFO · Rate", "LFO · Phase", "Filter · Cutoff", "Filter · Resonance"];
+    private property <[string]> destinations: ["OSC 1 · Semitone", "OSC 1 · Fine", "OSC 1 · Phase", "OSC 1 · Phase random", "OSC 1 · Pulse width", "OSC 1 · Unison", "OSC 1 · Detune", "OSC 1 · Pan", "OSC 1 · Level", "OSC 2 · Semitone", "OSC 2 · Fine", "OSC 2 · Phase", "OSC 2 · Phase random", "OSC 2 · Pulse width", "OSC 2 · Unison", "OSC 2 · Detune", "OSC 2 · Pan", "OSC 2 · Level", "OSC 3 · Semitone", "OSC 3 · Fine", "OSC 3 · Phase", "OSC 3 · Phase random", "OSC 3 · Pulse width", "OSC 3 · Unison", "OSC 3 · Detune", "OSC 3 · Pan", "OSC 3 · Level", "Master · Volume", "AMP ENV · Attack", "AMP ENV · Decay", "AMP ENV · Sustain", "AMP ENV · Release", "LFO · Rate", "LFO · Phase", "Filter · Cutoff", "Filter · Resonance", "MOD ENV · Attack", "MOD ENV · Decay", "MOD ENV · Sustain", "MOD ENV · Release"];
 
     VerticalLayout {
         padding: 10px;
@@ -250,7 +253,7 @@ export component MainWindow inherits Window {
                             }
                             Rectangle { height: 1px; background: #414b54; }
                             Knob { target: 27; label: "MASTER"; unit: "%"; default-value: 25; value: root.volume; edited(v) => { root.volume-edited(v); } }
-                            Text { text: "OSC MIX → FILTER → AMP\nENV always shapes amplitude.\nStart quietly."; color: #90a2ae; font-size: 10px; wrap: word-wrap; }
+                            Text { text: "OSC MIX → FILTER → AMP\nAMP ENV shapes amplitude.\nMOD ENV is freely assignable."; color: #90a2ae; font-size: 10px; wrap: word-wrap; }
                         }
                     }
                 }
@@ -260,8 +263,8 @@ export component MainWindow inherits Window {
                         VerticalLayout {
                             padding: 10px; spacing: 7px;
                             HorizontalLayout {
-                                Action { text: "ENV 1  /  ASSIGN"; min-width: 130px; accent: #53e2b4; selected: Modulation.selected-source == 0; activated => { Modulation.selected-source = 0; } }
-                                Text { text: "ADSR · UNIPOLAR"; color: #7daca1; font-size: 10px; vertical-alignment: center; }
+                                Action { text: "AMP ENV / ASSIGN"; min-width: 130px; accent: #53e2b4; selected: Modulation.selected-source == 0; activated => { Modulation.selected-source = 0; } }
+                                Text { text: "UNIPOLAR"; color: #7daca1; font-size: 9px; vertical-alignment: center; }
                                 Rectangle { width: 72px; height: 6px; background: #121c1c; Rectangle { width: parent.width * clamp(root.env-value, 0, 1); height: parent.height; background: #53e2b4; } }
                             }
                             EnvelopeGraph { height: 50px; attack: root.globals[0]; decay: root.globals[1]; sustain: root.globals[2]; release: root.globals[3]; }
@@ -273,6 +276,25 @@ export component MainWindow inherits Window {
                                 Knob { target: 31; label: "RELEASE"; unit: " s"; minimum: 0.001; maximum: 10; logarithmic: true; default-value: 0.4; value: root.globals[3]; accent: #53e2b4; edited(v) => { root.global-edited(3, v); } }
                             }
                             Text { text: "Shape preview · sustain hold shown as 300 ms"; color: #849c97; font-size: 9px; }
+                        }
+                    }
+                    Panel {
+                        VerticalLayout {
+                            padding: 10px; spacing: 7px;
+                            HorizontalLayout {
+                                Action { text: "MOD ENV / ASSIGN"; min-width: 130px; accent: #e6b66b; selected: Modulation.selected-source == 2; activated => { Modulation.selected-source = 2; } }
+                                Text { text: "UNIPOLAR"; color: #bca47e; font-size: 9px; vertical-alignment: center; }
+                                Rectangle { width: 72px; height: 6px; background: #231e17; Rectangle { width: parent.width * clamp(root.mod-env-value, 0, 1); height: parent.height; background: #e6b66b; } }
+                            }
+                            EnvelopeGraph { height: 50px; attack: root.globals[8]; decay: root.globals[9]; sustain: root.globals[10]; release: root.globals[11]; trace: #e6b66b; }
+                            HorizontalLayout {
+                                spacing: 4px;
+                                Knob { target: 36; label: "ATTACK"; unit: " s"; minimum: 0.001; maximum: 10; logarithmic: true; default-value: 0.01; value: root.globals[8]; accent: #e6b66b; edited(v) => { root.global-edited(8, v); } }
+                                Knob { target: 37; label: "DECAY"; unit: " s"; minimum: 0.001; maximum: 10; logarithmic: true; default-value: 0.2; value: root.globals[9]; accent: #e6b66b; edited(v) => { root.global-edited(9, v); } }
+                                Knob { target: 38; label: "SUSTAIN"; maximum: 1; default-value: 0.7; value: root.globals[10]; accent: #e6b66b; edited(v) => { root.global-edited(10, v); } }
+                                Knob { target: 39; label: "RELEASE"; unit: " s"; minimum: 0.001; maximum: 10; logarithmic: true; default-value: 0.4; value: root.globals[11]; accent: #e6b66b; edited(v) => { root.global-edited(11, v); } }
+                            }
+                            Text { text: "Independent shape · meter = live DSP output"; color: #bca47e; font-size: 9px; }
                         }
                     }
                     Panel {
@@ -301,22 +323,25 @@ export component MainWindow inherits Window {
                             Text { text: "Source-control modulation uses prior DSP output"; color: #8498b0; font-size: 9px; }
                         }
                     }
-                    Panel {
-                        min-width: 255px; max-width: 310px;
+                }
+                Panel {
+                    HorizontalLayout {
+                        padding: 10px; spacing: 12px;
                         VerticalLayout {
-                            padding: 10px; spacing: 4px;
+                            min-width: 270px; spacing: 4px;
                             Text { text: "MODULATION ROUTING"; color: #e6edf2; font-size: 13px; font-weight: 700; }
-                            Text { text: "Select ENV / LFO → click + below a knob\nEdit both signed depths independently"; color: #a9b9c4; font-size: 10px; }
+                            Text { text: "Select a source → click + below a knob"; color: #a9b9c4; font-size: 10px; }
                             ComboBox { model: root.destinations; current-index: Modulation.selected-target; selected(value) => { Modulation.selected-target = self.current-index; } }
-                            for name[source] in ["ENV", "LFO"]: VerticalLayout {
-                                spacing: 2px;
-                                HorizontalLayout {
-                                    Text { text: name + "  " + (root.depth(source) >= 0 ? "+" : "") + "\{round(root.depth(source) * 100)}%"; color: source == 0 ? #53e2b4 : #659fff; font-size: 11px; vertical-alignment: center; }
-                                    Action { text: "REMOVE"; min-width: 68px; available: root.depth(source) != 0; activated => { Modulation.routed(Modulation.selected-target, source, 0); } }
-                                }
-                                DepthSlider { value: root.depth(source); label: name + " modulation depth"; accent: source == 0 ? #53e2b4 : #659fff; edited(v) => { Modulation.routed(Modulation.selected-target, source, v); } }
+                            Text { text: "A / L / M rings = range · white dot = effective"; color: #8c9eab; font-size: 9px; }
+                        }
+                        for name[source] in ["AMP ENV", "LFO", "MOD ENV"]: VerticalLayout {
+                            spacing: 4px;
+                            HorizontalLayout {
+                                Text { text: name + "  " + (root.depth(source) >= 0 ? "+" : "") + "\{round(root.depth(source) * 100)}%"; color: source == 0 ? #53e2b4 : source == 1 ? #659fff : #e6b66b; font-size: 11px; vertical-alignment: center; }
+                                Action { text: "REMOVE"; min-width: 68px; available: root.depth(source) != 0; activated => { Modulation.routed(Modulation.selected-target, source, 0); } }
                             }
-                            Text { text: "Green / blue rings = range · white dot = effective\nZero depth removes only that source."; color: #8c9eab; font-size: 9px; wrap: word-wrap; }
+                            DepthSlider { value: root.depth(source); label: name + " modulation depth"; accent: source == 0 ? #53e2b4 : source == 1 ? #659fff : #e6b66b; edited(v) => { Modulation.routed(Modulation.selected-target, source, v); } }
+                            Text { text: "Signed depth · zero removes this source"; color: #8c9eab; font-size: 9px; }
                         }
                     }
                 }
@@ -363,5 +388,5 @@ export component MainWindow inherits Window {
             }
         }
     }
-    function depth(source: int) -> float { return source == 0 ? root.env-depths[Modulation.selected-target] : root.lfo-depths[Modulation.selected-target]; }
+    function depth(source: int) -> float { return source == 0 ? root.env-depths[Modulation.selected-target] : source == 1 ? root.lfo-depths[Modulation.selected-target] : root.mod-env-depths[Modulation.selected-target]; }
 }

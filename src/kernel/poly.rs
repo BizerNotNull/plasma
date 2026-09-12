@@ -16,11 +16,12 @@ struct Slot {
     transition_left: usize,
 }
 
-/// Eight independently seeded oscillator/envelope/LFO/filter voices.
+/// Eight independently seeded oscillator/AMP ENV/MOD ENV/LFO/filter voices.
 ///
 /// Repeated held notes retrigger their existing slot. Otherwise allocation uses
 /// an idle slot, then the oldest released slot, then the oldest held slot.
-/// Release tails count as active until their envelope and transition finish.
+/// Release tails count as active until AMP ENV and the transition finish;
+/// a long MOD ENV release never retains an otherwise silent slot.
 /// Age is a bounded rank permutation, so arbitrarily long event streams cannot
 /// overflow a timestamp or change the stealing order.
 ///
@@ -186,7 +187,7 @@ impl PolySynth {
     }
 
     /// Reports the most recently triggered active slot, including release tails.
-    /// With no active slots, ENV/LFO are zero and effective values are the base
+    /// With no active slots, all sources are zero and effective values are the base
     /// snapshot. Modulation belongs to each voice, not to this display selection.
     pub fn telemetry(&self) -> Telemetry {
         self.slots
