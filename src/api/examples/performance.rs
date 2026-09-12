@@ -20,7 +20,6 @@ const SEED: u64 = 0x706c_6173_6d61_2026;
 struct Input {
     oscillator: OscillatorParams,
     unit: f32,
-    note: u8,
     target: usize,
     source: usize,
 }
@@ -39,7 +38,6 @@ fn inputs() -> [Input; 256] {
                 ..OscillatorParams::default()
             },
             unit,
-            note: 36 + (seed % 60) as u8,
             target: i % TARGET_COUNT,
             source: (i / TARGET_COUNT) % 2,
         }
@@ -168,12 +166,6 @@ fn offline() -> Result<(), String> {
         let input = data[i & 255];
         synth.set_route(input.target, input.source, input.unit * 2.0 - 1.0)
     })?;
-    measure("note_on", BATCH, |i| synth.note_on(data[i & 255].note))?;
-    measure("note_off", BATCH, |_| synth.note_off())?;
-    measure("note_on_off_pair", BATCH, |i| {
-        synth.note_on(data[i & 255].note)?;
-        synth.note_off()
-    })?;
     measure("telemetry", BATCH, |_| {
         black_box(synth.telemetry());
         Ok(())
@@ -189,7 +181,7 @@ fn audio_attempt(name: &str, count: usize) -> usize {
     let mut failed_starts = Vec::with_capacity(count);
     let mut errors = 0;
     for iteration in 0..count {
-        // Always fresh, silent controls: offline note tests never reach a device.
+        // Always fresh, silent controls: device timing never plays notes.
         let synth = Synth::new();
         let start = Instant::now();
         let output = AudioOutput::start(synth);
@@ -248,7 +240,7 @@ fn main() -> Result<(), String> {
         }
     }
     eprintln!(
-        "API performance: seed={SEED:#x}; samples={SAMPLES}; batch={BATCH}; warmup={WARMUP}; nearest-rank quantiles of per-operation batch averages, not individual-call tail latency. iterations counts timed batches; note_on_off_pair counts a pair as one operation. No output/sample allocation inside timing, except explicitly allocating/deallocating creation/audio operations. Fixed input generation precedes timing. API call and loop/Result-check overhead remain included; timer_loop_floor is not subtracted."
+        "API performance: seed={SEED:#x}; samples={SAMPLES}; batch={BATCH}; warmup={WARMUP}; nearest-rank quantiles of per-operation batch averages, not individual-call tail latency. iterations counts timed batches. Note enqueue benchmarks require an active consumer and are excluded from this offline parameter benchmark. No output/sample allocation inside timing, except explicitly allocating/deallocating creation/audio operations. Fixed input generation precedes timing. API call and loop/Result-check overhead remain included; timer_loop_floor is not subtracted."
     );
     eprintln!(
         "Offline telemetry reads initialized atomics without a DSP publisher; concurrent scenarios measure control writer plus telemetry reader only, not audio callback contention. Audio times include device discovery/configuration, stream construction and play(), not time-to-first-callback or time-to-sound; backend-controlled calls have no hard timeout. First attempt is cold within this process, not necessarily OS/driver cold. No notes are played in audio mode."

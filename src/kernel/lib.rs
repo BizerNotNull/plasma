@@ -27,9 +27,14 @@
 //! may route to every target with signed normalized depths. Filter coefficients
 //! and master gain are smoothed over 3 ms; modulation runs at approximately
 //! 1 kHz, without recomputing unchanged oscillator coefficients.
+//!
+//! [`PolySynth`] supplies eight independent voices, MIDI note/velocity events,
+//! selective release, deterministic stealing and a bounded stereo mix.
 
 mod dsp;
 pub mod osc;
+mod poly;
+pub use poly::{POLYPHONY, PolySynth};
 pub mod voice;
 pub use voice::{
     GLOBAL_COUNT, GLOBAL_DEFAULTS, LfoWave, TARGET_COUNT, Telemetry, Voice, VoiceParams,

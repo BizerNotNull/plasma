@@ -1,4 +1,4 @@
-import { ScrollView, ComboBox } from "std-widgets.slint";
+import { ScrollView, ComboBox, SpinBox } from "std-widgets.slint";
 import { Knob, Modulation } from "knob.slint";
 export { Modulation } from "knob.slint";
 
@@ -168,6 +168,8 @@ component PianoKey inherits Rectangle {
     TouchArea { enabled: root.available; clicked => { root.played(); } }
     accessible-role: button;
     accessible-label: root.label;
+    accessible-checkable: true;
+    accessible-checked: root.active;
     accessible-action-default => { if root.available { root.played(); } }
 }
 
@@ -183,7 +185,8 @@ export component MainWindow inherits Window {
     in property <string> audio-status: "Starting audio…";
     in property <string> control-error;
     in property <bool> audio-ready: false;
-    in property <int> active-note: -1;
+    in property <[bool]> held-notes;
+    in-out property <int> velocity: 127;
     in property <float> volume: 25;
     in property <[float]> globals: [0.01, 0.2, 0.7, 0.4, 1, 0, 18000, 0.1];
     in property <int> lfo-wave: 0;
@@ -208,7 +211,7 @@ export component MainWindow inherits Window {
         HorizontalLayout {
             height: 42px;
             Text { text: "PLASMA"; color: #eef4f7; font-size: 27px; font-weight: 800; vertical-alignment: center; }
-            Text { text: "MODULATION SYNTHESIZER  /  MONO"; color: #788d9a; font-size: 10px; vertical-alignment: center; }
+            Text { text: "MODULATION SYNTHESIZER  /  8 VOICES"; color: #788d9a; font-size: 10px; vertical-alignment: center; }
             Text { text: root.audio-ready ? "AUDIO ONLINE" : "AUDIO OFFLINE"; color: root.audio-ready ? #53e2b4 : #ffad88; horizontal-alignment: right; vertical-alignment: center; font-size: 11px; }
             Action { text: "STOP"; min-width: 70px; accent: #ffad88; activated => { root.stop(); } }
         }
@@ -322,12 +325,21 @@ export component MainWindow inherits Window {
             }
         }
         Panel {
-            height: 87px;
+            height: 101px;
             VerticalLayout {
                 padding: 9px; spacing: 6px;
                 HorizontalLayout {
-                    Text { text: root.active-note < 0 ? "AUDITION  /  Click a key to latch" : "AUDITION  /  Playing · click again to release"; color: #a7bbc7; font-size: 10px; }
-                    Text { text: "Drag ↑↓ · Shift = fine · Wheel = step · Double-click = reset"; color: #8294a0; font-size: 10px; horizontal-alignment: right; }
+                    spacing: 8px;
+                    Text { text: "AUDITION  /  Click keys to latch · click again to release"; color: #a7bbc7; font-size: 10px; vertical-alignment: center; wrap: word-wrap; }
+                    Text { text: "VELOCITY"; color: #a7bbc7; font-size: 10px; vertical-alignment: center; }
+                    SpinBox {
+                        width: 110px;
+                        minimum: 1;
+                        maximum: 127;
+                        value <=> root.velocity;
+                        accessible-label: "Audition velocity";
+                    }
+                    Text { text: "Drag ↑↓ · Shift = fine · Wheel = step · Double-click = reset"; color: #8294a0; font-size: 10px; horizontal-alignment: right; vertical-alignment: center; wrap: word-wrap; }
                 }
                 Rectangle {
                     height: 49px;
@@ -336,7 +348,7 @@ export component MainWindow inherits Window {
                         y: 0px;
                         width: parent.width / 8 - 2px; height: parent.height;
                         label: ["C4", "D", "E", "F", "G", "A", "B", "C5"][index];
-                        active: root.active-note == note; available: root.audio-ready;
+                        active: root.held-notes[note - 60]; available: root.audio-ready;
                         played => { root.audition(note); }
                     }
                     for note[index] in [61, 63, 66, 68, 70]: PianoKey {
@@ -344,7 +356,7 @@ export component MainWindow inherits Window {
                         y: 0px;
                         width: parent.width / 8 * 0.6; height: 31px;
                         label: ["C♯", "D♯", "F♯", "G♯", "A♯"][index]; sharp: true;
-                        active: root.active-note == note; available: root.audio-ready;
+                        active: root.held-notes[note - 60]; available: root.audio-ready;
                         played => { root.audition(note); }
                     }
                 }

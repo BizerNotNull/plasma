@@ -1,11 +1,14 @@
-//! Monophonic synthesis and real system audio. Control writers serialize on a
-//! mutex; the audio callback reads a fixed atomic snapshot once per buffer and
-//! never locks, waits or allocates. Concurrent updates defer one buffer. Note
-//! commands are latest-state controls and can coalesce between audio buffers.
+//! Eight-voice synthesis and real system audio. Parameters are atomic snapshots;
+//! notes use a bounded FIFO shared by cloneable writers. The audio consumer never
+//! locks, waits or allocates. Only one live renderer/output may consume a Synth.
+mod events;
+use events::{ConsumerLease, NoteQueue};
+#[cfg(test)]
+mod tests;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 pub use plasma_kernel::{
-    GLOBAL_COUNT, GLOBAL_DEFAULTS, LfoWave, OscillatorParams, TARGET_COUNT, Telemetry, Voice,
-    VoiceParams, Waveform, denormalize, normalize, target_range,
+    GLOBAL_COUNT, GLOBAL_DEFAULTS, LfoWave, OscillatorParams, POLYPHONY, PolySynth, TARGET_COUNT,
+    Telemetry, Voice, VoiceParams, Waveform, denormalize, normalize, target_range,
 };
 use std::sync::{
     Arc, Mutex,
@@ -16,10 +19,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 #[derive(Clone, Copy, Default)]
 struct Controls {
     params: VoiceParams,
-    note: Option<u8>,
-    generation: u64,
 }
-const WORDS: usize = 115;
+const WORDS: usize = 113;
 struct Published {
     version: AtomicU64,
     words: [AtomicU64; WORDS],
@@ -69,8 +70,6 @@ impl Published {
             words[n] = (v as f64).to_bits();
             n += 1;
         }
-        words[n] = c.note.map_or(128, u64::from);
-        words[n + 1] = c.generation;
         self.version.fetch_add(1, Ordering::SeqCst);
         for (dst, word) in self.words.iter().zip(words) {
             dst.store(word, Ordering::SeqCst);
@@ -128,12 +127,6 @@ impl Published {
             *v = f64::from_bits(words[n]) as f32;
             n += 1;
         }
-        c.note = if words[n] < 128 {
-            Some(words[n] as u8)
-        } else {
-            None
-        };
-        c.generation = words[n + 1];
         Some(c)
     }
 }
@@ -174,6 +167,7 @@ pub struct Synth {
     controls: Arc<Mutex<Controls>>,
     published: Arc<Published>,
     meters: Arc<Meters>,
+    notes: Arc<NoteQueue>,
 }
 impl Synth {
     pub fn new() -> Self {
@@ -255,22 +249,98 @@ impl Synth {
     pub fn telemetry(&self) -> Telemetry {
         self.meters.load()
     }
-    pub fn note_on(&self, note: u8) -> Result<(), String> {
-        if note > 127 {
-            return Err("MIDI note must be between 0 and 127".into());
+    /// Queues a MIDI note in FIFO order; velocity zero queues note-off.
+    /// At capacity, returns an error and requests release of all voices. Events
+    /// queued before that request are discarded at the next buffer boundary.
+    pub fn note_on(&self, note: u8, velocity: u8) -> Result<(), String> {
+        if note > 127 || velocity > 127 {
+            return Err("MIDI note and velocity must be between 0 and 127".into());
         }
-        self.update(|c| {
-            c.note = Some(note);
-            c.generation = c.generation.wrapping_add(1);
-            Ok(())
+        self.notes.push(note, velocity)
+    }
+    /// Queues release of this note only. Other held notes continue sounding.
+    pub fn note_off(&self, note: u8) -> Result<(), String> {
+        self.note_on(note, 0)
+    }
+    /// Requests release of every voice, even when the FIFO is full. Discards
+    /// earlier queued events; later events remain ordered after this boundary.
+    pub fn all_notes_off(&self) -> Result<(), String> {
+        self.notes.reset();
+        Ok(())
+    }
+}
+
+/// Offline or device-backed rendering through the same buffer-boundary path.
+/// Construction exclusively claims this Synth's note FIFO until drop; starting
+/// another renderer or AudioOutput returns an error. Rendering applies one
+/// parameter snapshot and at most 128 queued events before producing samples.
+/// Telemetry follows the most recently triggered active voice.
+pub struct AudioRenderer {
+    synth: Synth,
+    lease: ConsumerLease,
+    engine: PolySynth,
+}
+
+impl AudioRenderer {
+    pub fn new(synth: Synth, sample_rate: f64, seed: u64) -> Result<Self, String> {
+        let lease = ConsumerLease::acquire(synth.notes.clone())?;
+        Self::with_lease(synth, lease, sample_rate, seed)
+    }
+
+    fn with_lease(
+        synth: Synth,
+        lease: ConsumerLease,
+        sample_rate: f64,
+        seed: u64,
+    ) -> Result<Self, String> {
+        let engine = PolySynth::new(sample_rate, seed).map_err(|e| e.to_string())?;
+        Ok(Self {
+            synth,
+            lease,
+            engine,
         })
     }
-    /// Starts the configured ADSR release. The audio stream remains running.
-    pub fn note_off(&self) -> Result<(), String> {
-        self.update(|c| {
-            c.note = None;
-            Ok(())
-        })
+
+    fn begin_buffer(&mut self) {
+        if let Some(snapshot) = self.synth.published.load() {
+            let _ = self.engine.set_params(snapshot.params);
+        }
+        self.lease.dispatch(&mut self.engine);
+    }
+
+    /// Renders stereo frames without allocating, locking, or waiting.
+    pub fn render(&mut self, output: &mut [[f32; 2]]) {
+        self.begin_buffer();
+        self.engine.render(output);
+        self.synth.meters.store(self.engine.telemetry());
+    }
+
+    pub fn active_voice_count(&self) -> usize {
+        self.engine.active_voice_count()
+    }
+
+    fn render_interleaved<T>(&mut self, output: &mut [T], channels: usize)
+    where
+        T: cpal::SizedSample + cpal::FromSample<f32>,
+    {
+        self.begin_buffer();
+        let mut frames = output.chunks_exact_mut(channels);
+        for frame in &mut frames {
+            let [left, right] = self.engine.next_frame();
+            if channels == 1 {
+                frame[0] = T::from_sample((left + right) * 0.5);
+            } else {
+                frame[0] = T::from_sample(left);
+                frame[1] = T::from_sample(right);
+                for sample in &mut frame[2..] {
+                    *sample = T::from_sample(0.0);
+                }
+            }
+        }
+        for sample in frames.into_remainder() {
+            *sample = T::from_sample(0.0);
+        }
+        self.synth.meters.store(self.engine.telemetry());
     }
 }
 
@@ -285,6 +355,7 @@ pub struct AudioOutput {
 
 impl AudioOutput {
     pub fn start(synth: Synth) -> Result<Self, String> {
+        let lease = ConsumerLease::acquire(synth.notes.clone())?;
         let host = cpal::default_host();
         let device = host
             .default_output_device()
@@ -307,9 +378,15 @@ impl AudioOutput {
         );
         let failed = Arc::new(AtomicBool::new(false));
         let stream = match format {
-            cpal::SampleFormat::F32 => build_stream::<f32>(&device, &config, synth, failed.clone()),
-            cpal::SampleFormat::I16 => build_stream::<i16>(&device, &config, synth, failed.clone()),
-            cpal::SampleFormat::U16 => build_stream::<u16>(&device, &config, synth, failed.clone()),
+            cpal::SampleFormat::F32 => {
+                build_stream::<f32>(&device, &config, synth, lease, failed.clone())
+            }
+            cpal::SampleFormat::I16 => {
+                build_stream::<i16>(&device, &config, synth, lease, failed.clone())
+            }
+            cpal::SampleFormat::U16 => {
+                build_stream::<u16>(&device, &config, synth, lease, failed.clone())
+            }
             _ => {
                 return Err(format!(
                     "Unsupported default audio sample format: {format:?}; expected f32, i16, or u16"
@@ -343,6 +420,7 @@ fn build_stream<T>(
     device: &cpal::Device,
     config: &cpal::StreamConfig,
     synth: Synth,
+    lease: ConsumerLease,
     failed: Arc<AtomicBool>,
 ) -> Result<cpal::Stream, String>
 where
@@ -352,41 +430,13 @@ where
     let seed = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(1, |d| d.as_nanos() as u64);
-    let mut voice = Voice::new(f64::from(config.sample_rate.0), seed).map_err(|e| e.to_string())?;
-    let mut previous = Controls::default();
+    let mut renderer =
+        AudioRenderer::with_lease(synth, lease, f64::from(config.sample_rate.0), seed)?;
     device
         .build_output_stream(
             config,
             move |output: &mut [T], _: &cpal::OutputCallbackInfo| {
-                if let Some(snapshot) = synth.published.load() {
-                    let _ = voice.set_params(snapshot.params);
-                    if let Some(note) = snapshot.note {
-                        if snapshot.generation != previous.generation {
-                            let _ = voice
-                                .note_on(440.0 * 2.0_f64.powf((f64::from(note) - 69.0) / 12.0));
-                        }
-                    } else if previous.note.is_some() {
-                        voice.note_off();
-                    }
-                    previous = snapshot;
-                }
-                let mut frames = output.chunks_exact_mut(channels);
-                for frame in &mut frames {
-                    let [left, right] = voice.next_frame();
-                    if channels == 1 {
-                        frame[0] = T::from_sample((left + right) * 0.5);
-                    } else {
-                        frame[0] = T::from_sample(left);
-                        frame[1] = T::from_sample(right);
-                        for sample in &mut frame[2..] {
-                            *sample = T::from_sample(0.0);
-                        }
-                    }
-                }
-                for sample in frames.into_remainder() {
-                    *sample = T::from_sample(0.0);
-                }
-                synth.meters.store(voice.telemetry());
+                renderer.render_interleaved(output, channels);
             },
             move |_| failed.store(true, Ordering::Relaxed),
             None,

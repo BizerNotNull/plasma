@@ -297,8 +297,23 @@ impl Voice {
         self.target_g = (std::f64::consts::PI * cutoff / self.sample_rate).tan();
         self.target_k = 2.0 - 1.9 * self.effective_globals[7] as f64;
     }
+    /// Clears the previous note's envelope and filter when a polyphonic slot is
+    /// reassigned. The free-running LFO and smoothed controls remain continuous.
+    pub(crate) fn reset_note(&mut self) {
+        self.stage = Stage::Idle;
+        self.telemetry.env = 0.0;
+        self.release_start = 0.0;
+        self.filters = std::array::from_fn(|_| Lowpass::default());
+    }
+
     /// One stereo frame, with no allocation, synchronization or shared state.
     pub fn next_frame(&mut self) -> [f32; 2] {
+        self.next_frame_unclipped()
+            .map(|sample| sample.clamp(-1.0, 1.0))
+    }
+
+    /// Polyphonic mixing applies its limiter only after summing all voices.
+    pub(crate) fn next_frame_unclipped(&mut self) -> [f32; 2] {
         if self.clock == 0 {
             self.control_tick();
             self.clock = self.period;
@@ -356,8 +371,7 @@ impl Voice {
         std::array::from_fn(|i| {
             (self.filters[i].next(frame[i] as f64, self.g, self.k)
                 * self.gain
-                * self.telemetry.env as f64)
-                .clamp(-1.0, 1.0) as f32
+                * self.telemetry.env as f64) as f32
         })
     }
     pub fn render(&mut self, output: &mut [[f32; 2]]) {

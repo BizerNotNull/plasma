@@ -76,6 +76,13 @@ fn show_result(window: &MainWindow, result: Result<(), String>) -> bool {
     }
 }
 
+fn release_audition(synth: &Synth, held_notes: &VecModel<bool>) -> Result<(), String> {
+    for index in 0..held_notes.row_count() {
+        held_notes.set_row_data(index, false);
+    }
+    synth.all_notes_off()
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let performance = Rc::new(performance::Performance::new()?);
     let synth = Synth::new();
@@ -92,6 +99,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .collect::<Result<Vec<_>, _>>()?;
     let oscillators = Rc::new(VecModel::from(initial));
     window.set_oscillators(oscillators.clone().into());
+    let held_notes = Rc::new(VecModel::from(vec![false; 13]));
+    window.set_held_notes(held_notes.clone().into());
     // The API contract initializes master gain to 0.25; establish it explicitly
     // so the control and engine cannot start with different values.
     synth.set_volume(0.25)?;
@@ -243,6 +252,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     window.on_audition({
         let weak = window.as_weak();
         let synth = synth.clone();
+        let held_notes = held_notes.clone();
         move |note| {
             let Some(window) = weak.upgrade() else { return };
             if !window.get_audio_ready() {
@@ -253,23 +263,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 show_result(&window, Err("Audition note must be in C4–C5".into()));
                 return;
             }
-            if window.get_active_note() == note {
-                if show_result(&window, synth.note_off()) {
-                    window.set_active_note(-1);
+            let index = (note - 60) as usize;
+            let held = held_notes.row_data(index).unwrap_or(false);
+            let result = if held {
+                synth.note_off(note as u8)
+            } else {
+                synth.note_on(note as u8, window.get_velocity().clamp(1, 127) as u8)
+            };
+            match result {
+                Ok(()) => {
+                    held_notes.set_row_data(index, !held);
+                    show_result(&window, Ok(()));
                 }
-            } else if show_result(&window, synth.note_on(note as u8)) {
-                window.set_active_note(note);
+                Err(error) => {
+                    // A rejected event may panic-release the engine; reconcile all keys.
+                    let result = match release_audition(&synth, &held_notes) {
+                        Ok(()) => Err(error),
+                        Err(release_error) => Err(format!(
+                            "{error}; could not release all notes: {release_error}"
+                        )),
+                    };
+                    show_result(&window, result);
+                }
             }
         }
     });
     window.on_stop({
         let weak = window.as_weak();
         let synth = synth.clone();
+        let held_notes = held_notes.clone();
         move || {
             if let Some(window) = weak.upgrade() {
-                if show_result(&window, synth.note_off()) {
-                    window.set_active_note(-1);
-                }
+                show_result(&window, release_audition(&synth, &held_notes));
             }
         }
     });
@@ -280,6 +305,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let weak = window.as_weak();
         let synth = synth.clone();
         let performance = performance.clone();
+        let held_notes = held_notes.clone();
         audio_monitor.start(slint::TimerMode::Repeated, Duration::from_millis(33), move || {
             let Some(window) = weak.upgrade() else { return };
             while let Ok(event) = output.events.try_recv() {
@@ -293,9 +319,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         performance.mark("audio_failed_ms");
                         window.set_audio_ready(false);
                         window.set_audio_status(format!("Audio unavailable: {error}. Check the output device and restart PLASMA.").into());
-                        if show_result(&window, synth.note_off()) {
-                            window.set_active_note(-1);
-                        }
+                        show_result(&window, release_audition(&synth, &held_notes));
                     }
                 }
             }
@@ -308,7 +332,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     audio_monitor.stop();
     drop(audio_monitor);
     modulation_monitor.stop();
-    if let Err(error) = synth.note_off() {
+    if let Err(error) = release_audition(&synth, &held_notes) {
         eprintln!("Could not stop the instrument during shutdown: {error}");
     }
     // Keep the real device stream alive throughout the event loop, then stop it.
