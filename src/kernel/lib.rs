@@ -24,8 +24,12 @@
 //! Targets 0..27 are the nine oscillator knobs per oscillator (pitch, fine,
 //! phase, random phase, pulse width, unison, detune, pan, level); 27 is master
 //! gain and 28..40 are the twelve [`VoiceParams::globals`] controls, with MOD ADSR
-//! appended at 36..40. All three sources may route to every target with signed
+//! appended at 36..40. AMP ENV, LFO, MOD ENV, velocity and key tracking may route
+//! to every target with signed
 //! normalized depths. Only AMP ENV controls final amplitude and voice lifetime.
+//! Velocity is a per-note unipolar source; key tracking is centered on MIDI 60
+//! with 60 semitones per unit, clamped to [-1, 1]. Route depths represent
+//! normalized target travel, not a percentage of exact cutoff tracking.
 //! Filter coefficients and master gain are smoothed over 3 ms; modulation runs at approximately
 //! 1 kHz, without recomputing unchanged oscillator coefficients.
 //!

@@ -55,6 +55,8 @@ fn realtime_render_and_control_transitions_do_not_allocate() {
         [0.025; TARGET_COUNT],
         [-0.02; TARGET_COUNT],
         [0.015; TARGET_COUNT],
+        [0.02; TARGET_COUNT],
+        [-0.025; TARGET_COUNT],
     ];
     params.globals[3] = 0.001;
     for osc in &mut params.oscillators {
@@ -76,13 +78,13 @@ fn realtime_render_and_control_transitions_do_not_allocate() {
             osc.waveform = wave;
         }
         voice.set_params(black_box(params)).unwrap();
-        voice.note_on(220.0).unwrap();
+        voice.note_on(220.0, 127).unwrap();
         for _ in 0..32 {
             voice.render(black_box(&mut frames));
         }
         voice.note_off();
         voice.render(black_box(&mut frames));
-        voice.note_on(440.0).unwrap();
+        voice.note_on(440.0, 32).unwrap();
         voice.set_params(black_box(params)).unwrap();
         voice.render(black_box(&mut frames));
         black_box(voice.telemetry());
@@ -99,6 +101,8 @@ fn polyphonic_events_stealing_and_rendering_do_not_allocate() {
         [0.025; TARGET_COUNT],
         [-0.02; TARGET_COUNT],
         [0.015; TARGET_COUNT],
+        [0.02; TARGET_COUNT],
+        [-0.025; TARGET_COUNT],
     ];
     params.globals[3] = 0.001;
     for osc in &mut params.oscillators {

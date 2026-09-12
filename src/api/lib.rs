@@ -148,6 +148,8 @@ impl Meters {
         self.values[0].store(t.env.to_bits(), Ordering::Relaxed);
         self.values[1].store(t.lfo.to_bits(), Ordering::Relaxed);
         self.values[2].store(t.mod_env.to_bits(), Ordering::Relaxed);
+        self.values[3].store(t.velocity.to_bits(), Ordering::Relaxed);
+        self.values[4].store(t.key_track.to_bits(), Ordering::Relaxed);
         for (dst, v) in self.values[SOURCE_COUNT..].iter().zip(t.effective) {
             dst.store(v.to_bits(), Ordering::Relaxed);
         }
@@ -157,6 +159,8 @@ impl Meters {
             env: f32::from_bits(self.values[0].load(Ordering::Relaxed)),
             lfo: f32::from_bits(self.values[1].load(Ordering::Relaxed)),
             mod_env: f32::from_bits(self.values[2].load(Ordering::Relaxed)),
+            velocity: f32::from_bits(self.values[3].load(Ordering::Relaxed)),
+            key_track: f32::from_bits(self.values[4].load(Ordering::Relaxed)),
             effective: std::array::from_fn(|i| {
                 f32::from_bits(self.values[i + SOURCE_COUNT].load(Ordering::Relaxed))
             }),
@@ -238,7 +242,10 @@ impl Synth {
             Ok(())
         })
     }
-    /// AMP ENV, LFO and MOD ENV can address every target, including source controls.
+    /// AMP ENV, LFO, MOD ENV, velocity and key tracking can address every target.
+    /// Source indices: 0 AMP ENV, 1 LFO, 2 MOD ENV, 3 velocity (0..1),
+    /// 4 key tracking (MIDI 60 = 0, 60 semitones/unit, clamped to -1..1).
+    /// Depth is signed normalized target travel, not a cutoff tracking percentage.
     pub fn set_route(&self, target: usize, source: usize, depth: f32) -> Result<(), String> {
         self.update(|c| {
             *c.params

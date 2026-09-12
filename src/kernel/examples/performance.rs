@@ -136,7 +136,7 @@ impl Renderer {
             let mut voice = Voice::new(f64::from(scenario.rate), SEED)?;
             voice.set_params(params)?;
             if !scenario.idle {
-                voice.note_on(220.0)?;
+                voice.note_on(220.0, 127)?;
             }
             Ok(Self::Voice(voice))
         }
@@ -174,7 +174,7 @@ impl Renderer {
                     Operation::Render => {}
                     Operation::Retrigger => {
                         voice.note_off();
-                        voice.note_on(if index % 2 == 0 { 220.0 } else { 329.6275569 })?;
+                        voice.note_on(if index % 2 == 0 { 220.0 } else { 329.6275569 }, 127)?;
                     }
                     Operation::RepeatParams | Operation::ChangeParams => {
                         voice.set_params(black_box(params[variant]))?;

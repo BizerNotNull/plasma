@@ -1,5 +1,6 @@
 //! Monophonic voice with a 1 kHz modulation control clock. Source-control routes
 //! use the previous control tick's AMP ENV/LFO/MOD ENV outputs, preventing loops.
+//! Velocity and key tracking are per-note constants, retained through release.
 //! Base parameters are never overwritten by modulation. Oscillator phase/random
 //! are sampled at the next trigger; unison modulation rounds to whole voices.
 
@@ -7,7 +8,7 @@ use crate::{Error, OSCILLATOR_COUNT, OscillatorBank, OscillatorParams};
 
 pub const TARGET_COUNT: usize = 40;
 pub const GLOBAL_COUNT: usize = 12;
-pub const SOURCE_COUNT: usize = 3;
+pub const SOURCE_COUNT: usize = 5;
 pub const GLOBAL_DEFAULTS: [f32; GLOBAL_COUNT] = [
     0.01, 0.2, 0.7, 0.4, 1.0, 0.0, 18000.0, 0.1, 0.01, 0.2, 0.7, 0.4,
 ];
@@ -74,7 +75,9 @@ pub struct VoiceParams {
     pub globals: [f32; GLOBAL_COUNT],
     pub lfo_wave: LfoWave,
     pub lfo_retrigger: bool,
-    /// [source: AMP ENV=0 / LFO=1 / MOD ENV=2][destination]. Zero removes a route.
+    /// [source: AMP ENV=0 / LFO=1 / MOD ENV=2 / Velocity=3 / KeyTrack=4][destination].
+    /// Zero removes a route. Key tracking is centered on MIDI 60, at 60 semitones
+    /// per unit; depths use normalized target travel, not exact cutoff tracking.
     pub routes: [[f32; TARGET_COUNT]; SOURCE_COUNT],
 }
 impl Default for VoiceParams {
@@ -139,6 +142,10 @@ pub struct Telemetry {
     pub env: f32,
     pub lfo: f32,
     pub mod_env: f32,
+    /// Note velocity / 127; independent of the AMP ENV.
+    pub velocity: f32,
+    /// MIDI note relative to 60, divided by 60 and clamped to [-1, 1].
+    pub key_track: f32,
     pub effective: [f32; TARGET_COUNT],
 }
 impl Default for Telemetry {
@@ -147,6 +154,8 @@ impl Default for Telemetry {
             env: 0.0,
             lfo: 0.0,
             mod_env: 0.0,
+            velocity: 0.0,
+            key_track: 0.0,
             effective: VoiceParams::default().normalized(),
         }
     }
@@ -301,10 +310,24 @@ impl Voice {
     }
     /// Retriggers both envelopes from their current levels (no discontinuity).
     /// Free LFO keeps its phase; retrigger LFO starts at the effective phase knob.
-    pub fn note_on(&mut self, frequency: f64) -> Result<(), Error> {
+    /// Velocity must be 0..=127 and affects modulation only, not amplitude.
+    /// Key tracking is inferred from frequency, centered on MIDI 60 with 60
+    /// semitones per unit and clamped to [-1, 1]; zero frequency maps to -1.
+    /// Invalid frequency or velocity leaves all state unchanged.
+    pub fn note_on(&mut self, frequency: f64, velocity: u8) -> Result<(), Error> {
         if !frequency.is_finite() || frequency < 0.0 {
             return Err(Error::InvalidFrequency);
         }
+        if velocity > 127 {
+            return Err(Error::InvalidParameter("MIDI velocity"));
+        }
+        self.telemetry.velocity = velocity as f32 / 127.0;
+        self.telemetry.key_track = if frequency == 0.0 {
+            -1.0
+        } else {
+            ((69.0 + 12.0 * (frequency.log2() - 440.0_f64.log2()) - 60.0) / 60.0).clamp(-1.0, 1.0)
+                as f32
+        };
         self.control_tick();
         self.bank.note_on(frequency)?;
         self.amp_env.note_on();
@@ -330,7 +353,9 @@ impl Voice {
             self.telemetry.effective[i] = (self.base[i]
                 + self.params.routes[0][i] * self.telemetry.env
                 + self.params.routes[1][i] * self.telemetry.lfo
-                + self.params.routes[2][i] * self.telemetry.mod_env)
+                + self.params.routes[2][i] * self.telemetry.mod_env
+                + self.params.routes[3][i] * self.telemetry.velocity
+                + self.params.routes[4][i] * self.telemetry.key_track)
                 .clamp(0.0, 1.0);
         }
         for i in 0..OSCILLATOR_COUNT {
@@ -360,13 +385,15 @@ impl Voice {
         self.target_g = (std::f64::consts::PI * cutoff / self.sample_rate).tan();
         self.target_k = 2.0 - 1.9 * self.effective_globals[7] as f64;
     }
-    /// Clears the previous note's envelopes and filter when a polyphonic slot is
-    /// reassigned. The free-running LFO and smoothed controls remain continuous.
+    /// Clears the previous note's envelopes, note sources and filter when a
+    /// polyphonic slot is reassigned. Free LFO and smoothed controls stay continuous.
     pub(crate) fn reset_note(&mut self) {
         self.amp_env = Envelope::default();
         self.mod_env = Envelope::default();
         self.telemetry.env = 0.0;
         self.telemetry.mod_env = 0.0;
+        self.telemetry.velocity = 0.0;
+        self.telemetry.key_track = 0.0;
         self.filters = std::array::from_fn(|_| Lowpass::default());
     }
 

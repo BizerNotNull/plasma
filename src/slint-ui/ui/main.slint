@@ -177,7 +177,7 @@ component PianoKey inherits Rectangle {
 export component MainWindow inherits Window {
     title: "PLASMA · Modulation Synthesizer";
     preferred-width: 1280px;
-    preferred-height: 820px;
+    preferred-height: 900px;
     min-width: 800px;
     min-height: 560px;
     background: #11161b;
@@ -195,10 +195,14 @@ export component MainWindow inherits Window {
     in property <[float]> env-depths <=> Modulation.env-depths;
     in property <[float]> lfo-depths <=> Modulation.lfo-depths;
     in property <[float]> mod-env-depths <=> Modulation.mod-env-depths;
+    in property <[float]> velocity-depths <=> Modulation.velocity-depths;
+    in property <[float]> key-track-depths <=> Modulation.key-track-depths;
     in property <[float]> effective-values <=> Modulation.effective-values;
     in property <float> env-value;
     in property <float> lfo-value;
     in property <float> mod-env-value;
+    in property <float> velocity-value;
+    in property <float> key-track-value;
     callback parameter-edited(int, int, float);
     callback volume-edited(float);
     callback audition(int);
@@ -317,31 +321,9 @@ export component MainWindow inherits Window {
                                         for name[index] in ["SIN", "TRI", "SAW", "SQR"]: Action { text: name; min-width: 35px; accent: #659fff; selected: root.lfo-wave == index; activated => { root.lfo-wave-edited(index); } }
                                     }
                                     Action { text: root.lfo-retrigger ? "RETRIGGER: ON" : "RETRIGGER: OFF"; accent: #659fff; selected: root.lfo-retrigger; activated => { root.lfo-retrigger-edited(!root.lfo-retrigger); } }
-                                    Text { text: "1 second shape preview\nMeter = live DSP output"; color: #8498b0; font-size: 9px; }
                                 }
                             }
                             Text { text: "Source-control modulation uses prior DSP output"; color: #8498b0; font-size: 9px; }
-                        }
-                    }
-                }
-                Panel {
-                    HorizontalLayout {
-                        padding: 10px; spacing: 12px;
-                        VerticalLayout {
-                            min-width: 270px; spacing: 4px;
-                            Text { text: "MODULATION ROUTING"; color: #e6edf2; font-size: 13px; font-weight: 700; }
-                            Text { text: "Select a source → click + below a knob"; color: #a9b9c4; font-size: 10px; }
-                            ComboBox { model: root.destinations; current-index: Modulation.selected-target; selected(value) => { Modulation.selected-target = self.current-index; } }
-                            Text { text: "A / L / M rings = range · white dot = effective"; color: #8c9eab; font-size: 9px; }
-                        }
-                        for name[source] in ["AMP ENV", "LFO", "MOD ENV"]: VerticalLayout {
-                            spacing: 4px;
-                            HorizontalLayout {
-                                Text { text: name + "  " + (root.depth(source) >= 0 ? "+" : "") + "\{round(root.depth(source) * 100)}%"; color: source == 0 ? #53e2b4 : source == 1 ? #659fff : #e6b66b; font-size: 11px; vertical-alignment: center; }
-                                Action { text: "REMOVE"; min-width: 68px; available: root.depth(source) != 0; activated => { Modulation.routed(Modulation.selected-target, source, 0); } }
-                            }
-                            DepthSlider { value: root.depth(source); label: name + " modulation depth"; accent: source == 0 ? #53e2b4 : source == 1 ? #659fff : #e6b66b; edited(v) => { Modulation.routed(Modulation.selected-target, source, v); } }
-                            Text { text: "Signed depth · zero removes this source"; color: #8c9eab; font-size: 9px; }
                         }
                     }
                 }
@@ -350,13 +332,30 @@ export component MainWindow inherits Window {
             }
         }
         Panel {
-            height: 101px;
+            height: 132px;
             VerticalLayout {
                 padding: 9px; spacing: 6px;
                 HorizontalLayout {
+                    spacing: 6px;
+                    Action { text: "VELOCITY / ASSIGN"; min-width: 128px; accent: #e58dbe; selected: Modulation.selected-source == 3; activated => { Modulation.selected-source = 3; } }
+                    Rectangle { width: 56px; height: 8px; background: #281c24; Rectangle { width: parent.width * clamp(root.velocity-value, 0, 1); height: parent.height; background: #e58dbe; } }
+                    Action { text: "KEY TRACK / ASSIGN"; min-width: 140px; accent: #b5a0ff; selected: Modulation.selected-source == 4; activated => { Modulation.selected-source = 4; } }
+                    Rectangle {
+                        width: 56px; height: 8px; background: #211d2e;
+                        Rectangle { x: (parent.width - 1px) / 2; width: 1px; height: parent.height; background: #70618b; }
+                        Rectangle { x: (parent.width - self.width) * (clamp(root.key-track-value, -1, 1) + 1) / 2; width: 4px; height: parent.height; background: #b5a0ff; }
+                    }
+                    ComboBox { width: 168px; model: root.destinations; current-index: Modulation.selected-target; selected(value) => { Modulation.selected-target = self.current-index; } }
+                    for name[source] in ["AMP", "LFO", "MOD", "VEL", "KEY"]: HorizontalLayout {
+                        spacing: 3px;
+                        Action { text: name; min-width: 36px; accent: source == 0 ? #53e2b4 : source == 1 ? #659fff : source == 2 ? #e6b66b : source == 3 ? #e58dbe : #b5a0ff; selected: Modulation.selected-source == source; activated => { Modulation.selected-source = source; } }
+                        DepthSlider { width: 72px; value: root.depth(source); label: name + " modulation depth"; accent: source == 0 ? #53e2b4 : source == 1 ? #659fff : source == 2 ? #e6b66b : source == 3 ? #e58dbe : #b5a0ff; edited(v) => { Modulation.routed(Modulation.selected-target, source, v); } }
+                    }
+                }
+                HorizontalLayout {
                     spacing: 8px;
                     Text { text: "AUDITION  /  Click keys to latch · click again to release"; color: #a7bbc7; font-size: 10px; vertical-alignment: center; wrap: word-wrap; }
-                    Text { text: "VELOCITY"; color: #a7bbc7; font-size: 10px; vertical-alignment: center; }
+                    Text { text: "MIDI VELOCITY"; color: #a7bbc7; font-size: 10px; vertical-alignment: center; }
                     SpinBox {
                         width: 110px;
                         minimum: 1;
@@ -364,7 +363,7 @@ export component MainWindow inherits Window {
                         value <=> root.velocity;
                         accessible-label: "Audition velocity";
                     }
-                    Text { text: "Drag ↑↓ · Shift = fine · Wheel = step · Double-click = reset"; color: #8294a0; font-size: 10px; horizontal-alignment: right; vertical-alignment: center; wrap: word-wrap; }
+                    Text { text: "Vel=/127 · Key=(note-60)/60 at MIDI 60 · depth=normalized travel · Drag ↑↓ knobs"; color: #8294a0; font-size: 9px; horizontal-alignment: right; vertical-alignment: center; wrap: word-wrap; }
                 }
                 Rectangle {
                     height: 49px;
@@ -388,5 +387,5 @@ export component MainWindow inherits Window {
             }
         }
     }
-    function depth(source: int) -> float { return source == 0 ? root.env-depths[Modulation.selected-target] : source == 1 ? root.lfo-depths[Modulation.selected-target] : root.mod-env-depths[Modulation.selected-target]; }
+    function depth(source: int) -> float { return source == 0 ? root.env-depths[Modulation.selected-target] : source == 1 ? root.lfo-depths[Modulation.selected-target] : source == 2 ? root.mod-env-depths[Modulation.selected-target] : source == 3 ? root.velocity-depths[Modulation.selected-target] : root.key-track-depths[Modulation.selected-target]; }
 }

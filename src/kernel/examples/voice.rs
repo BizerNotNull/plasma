@@ -19,7 +19,7 @@ fn render(
         p.routes[1][7] = 0.6;
     }
     voice.set_params(p)?;
-    voice.note_on(220.0)?;
+    voice.note_on(220.0, 127)?;
     let mut frames = Vec::with_capacity(144000);
     let mut energy = 0.0;
     for i in 0..144000 {

@@ -30,7 +30,8 @@ struct Slot {
 /// not a second oscillator voice: even repeated steals restart from the actual
 /// last output, with no accumulated correction or extra rendering work. The
 /// first frame after a trigger exactly preserves that slot's preceding output.
-/// Velocity scales amplitude linearly by velocity / 127, before this fade.
+/// Velocity scales amplitude linearly by velocity / 127, before this fade, and
+/// independently supplies each voice's Velocity modulation source.
 ///
 /// Mixing uses fixed 1/8 headroom, independent of the active count, then clamps
 /// only the final stereo sum to [-1, 1]. Construction, events and rendering use
@@ -125,7 +126,7 @@ impl PolySynth {
             slot.voice.reset_note();
         }
         slot.voice
-            .note_on(440.0 * 2.0_f64.powf((note as f64 - 69.0) / 12.0))?;
+            .note_on(440.0 * 2.0_f64.powf((note as f64 - 69.0) / 12.0), velocity)?;
         slot.note = Some(note);
         slot.held = true;
         slot.velocity = velocity as f32 / 127.0;

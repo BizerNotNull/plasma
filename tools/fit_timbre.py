@@ -198,6 +198,7 @@ def main():
         "patch": schema["default_patch"],
         "sample_rate": RATE,
         "frequency": frequency,
+        "velocity": 127,
         "duration": duration,
         "gate": gate,
         "seed": args.seed,
@@ -235,7 +236,9 @@ def main():
         "Return ONLY JSON with exactly {patch: full patch object, gate: note-off seconds, reason: short explanation}. "
         "All controls use native units in the given schema order, NOT normalized values. "
         "Keep all fields, arrays and route dimensions exactly as schema; unison must be integer. "
-        "routes[0] is unipolar AMP ENV, routes[1] bipolar LFO, and routes[2] unipolar MOD ENV, "
+        "routes[0] is unipolar AMP ENV, routes[1] bipolar LFO, routes[2] unipolar MOD ENV, "
+        "routes[3] unipolar velocity (fixed at 1 for this fitting run), and routes[4] key tracking "
+        "(clamp((69 + 12*log2(frequency/440) - 60)/60, -1, 1)), "
         "with signed normalized depths [-1,1]. AMP ADSR controls final amplitude; MOD ADSR is independent "
         "and affects sound only through routes. Fit waveform/harmonic mix/filter, then envelopes, detune and modulation. "
         "Use best-so-far, observed loss components and recent failures; do not assume a candidate improved before evaluation. "

@@ -225,3 +225,86 @@ fn long_mod_release_does_not_retain_amp_silent_slots() {
     assert_eq!(synth.active_voice_count(), 1);
     assert!(synth.telemetry().mod_env > 0.99);
 }
+
+#[test]
+fn chord_audio_keeps_each_notes_sources_through_release() {
+    let seed = 31_u64;
+    let mut chord = PolySynth::new(48000.0, seed).unwrap();
+    let mut low = PolySynth::new(48000.0, seed).unwrap();
+    // Match the independent oscillator seed used by the chord's second slot.
+    let mut high = PolySynth::new(48000.0, seed.wrapping_add(0x9e3779b97f4a7c15)).unwrap();
+    let mut params = VoiceParams::default();
+    params.globals[..4].copy_from_slice(&[0.001, 0.001, 1.0, 0.2]);
+    params.globals[6] = 800.0;
+    params.routes[3][34] = 0.3;
+    params.routes[4][7] = 0.8;
+    for synth in [&mut chord, &mut low, &mut high] {
+        synth.set_params(params).unwrap();
+    }
+    chord.note_on(36, 32).unwrap();
+    chord.note_on(84, 127).unwrap();
+    low.note_on(36, 32).unwrap();
+    high.note_on(84, 127).unwrap();
+    for frame in 0..12000 {
+        if frame == 2000 {
+            chord.note_off(84).unwrap();
+            high.note_off(84).unwrap();
+        }
+        let actual = chord.next_frame();
+        let a = low.next_frame();
+        let b = high.next_frame();
+        for channel in 0..2 {
+            assert!((actual[channel] - (a[channel] + b[channel])).abs() < 1e-7);
+        }
+        if frame == 3000 {
+            let t = chord.telemetry();
+            assert_eq!(t.velocity, 1.0);
+            assert!((t.key_track - 0.4).abs() < 1e-6);
+            assert!((t.effective[7] - 0.82).abs() < 1e-6);
+        }
+    }
+    assert_eq!(chord.active_voice_count(), 1);
+    let t = chord.telemetry();
+    assert_eq!(t.velocity, 32.0 / 127.0);
+    assert!((t.key_track + 0.4).abs() < 1e-6);
+    assert!((t.effective[7] - 0.18).abs() < 1e-6);
+}
+
+#[test]
+fn retriggers_and_stolen_slots_use_new_note_sources_immediately() {
+    let mut synth = PolySynth::new(48000.0, 32).unwrap();
+    let mut params = VoiceParams::default();
+    params.globals[..4].copy_from_slice(&[0.001, 0.001, 1.0, 0.01]);
+    params.routes[3][2] = 0.5;
+    params.routes[4][7] = 0.5;
+    synth.set_params(params).unwrap();
+    for note in 36..44 {
+        synth.note_on(note, 127).unwrap();
+    }
+    advance(&mut synth, 1000);
+    synth.note_on(43, 16).unwrap(); // Held-note retrigger, same slot.
+    assert_eq!(synth.active_voice_count(), POLYPHONY);
+    assert!((synth.telemetry().effective[2] - 0.5 * 16.0 / 127.0).abs() < 1e-6);
+    synth.note_on(84, 64).unwrap(); // Steals oldest held note, 36.
+    let stolen = synth.telemetry();
+    assert_eq!(stolen.velocity, 64.0 / 127.0);
+    assert!((stolen.key_track - 0.4).abs() < 1e-6);
+    assert!((stolen.effective[2] - 0.5 * 64.0 / 127.0).abs() < 1e-6);
+    assert!((stolen.effective[7] - 0.7).abs() < 1e-6);
+    synth.note_off(84).unwrap();
+    synth.note_on(48, 1).unwrap(); // Prefers the released slot over held notes.
+    let replaced = synth.telemetry();
+    assert_eq!(replaced.velocity, 1.0 / 127.0);
+    assert!((replaced.key_track + 0.2).abs() < 1e-6);
+    assert!((replaced.effective[2] - 0.5 / 127.0).abs() < 1e-6);
+    assert!((replaced.effective[7] - 0.4).abs() < 1e-6);
+    synth.all_notes_off();
+    advance(&mut synth, 1000);
+    assert_eq!(synth.active_voice_count(), 0);
+    assert_eq!(synth.telemetry().velocity, 0.0);
+    assert_eq!(synth.telemetry().key_track, 0.0);
+    synth.note_on(60, 32).unwrap(); // Reuses an idle slot.
+    assert_eq!(synth.telemetry().velocity, 32.0 / 127.0);
+    assert!(synth.telemetry().key_track.abs() < 1e-6);
+    assert!((synth.telemetry().effective[7] - 0.5).abs() < 1e-6);
+}

@@ -6,7 +6,7 @@ fn release_survives_old_gate_and_retrigger_preserves_envelope_level() {
     let mut params = VoiceParams::default();
     params.globals[..8].copy_from_slice(&[0.001, 0.001, 1.0, 0.2, 1.0, 0.0, 18000.0, 0.1]);
     voice.set_params(params).unwrap();
-    voice.note_on(440.0).unwrap();
+    voice.note_on(440.0, 127).unwrap();
     for _ in 0..1000 {
         voice.next_frame();
     }
@@ -16,7 +16,7 @@ fn release_survives_old_gate_and_retrigger_preserves_envelope_level() {
     }
     assert!(voice.telemetry().env > 0.9);
     let before = voice.telemetry().env;
-    voice.note_on(440.0).unwrap();
+    voice.note_on(440.0, 127).unwrap();
     assert_eq!(voice.telemetry().env, before);
     voice.note_off();
     for _ in 0..10000 {
@@ -37,16 +37,16 @@ fn free_lfo_runs_while_idle_and_retrigger_resets_phase() {
     for _ in 0..12000 {
         voice.next_frame();
     }
-    voice.note_on(220.0).unwrap();
+    voice.note_on(220.0, 127).unwrap();
     voice.next_frame();
     assert!((voice.telemetry().lfo + 0.5).abs() < 0.001);
     p.lfo_retrigger = true;
     p.globals[5] = 0.25;
     voice.set_params(p).unwrap();
-    voice.note_on(220.0).unwrap();
+    voice.note_on(220.0, 127).unwrap();
     voice.next_frame();
     assert!((voice.telemetry().lfo + 0.5).abs() < 0.001);
-    voice.note_on(220.0).unwrap();
+    voice.note_on(220.0, 127).unwrap();
     voice.next_frame();
     assert!((voice.telemetry().lfo + 0.5).abs() < 0.001);
 }
@@ -61,7 +61,7 @@ fn dual_routes_clamp_without_changing_bases_and_rejection_is_atomic() {
     p.routes[0] = [1.0; TARGET_COUNT];
     p.routes[1] = [1.0; TARGET_COUNT];
     voice.set_params(p).unwrap();
-    voice.note_on(440.0).unwrap();
+    voice.note_on(440.0, 127).unwrap();
     for _ in 0..100 {
         voice.next_frame();
     }
@@ -98,7 +98,7 @@ fn resonant_filter_remains_finite_during_extreme_cutoff_sweeps() {
         p.lfo_wave = LfoWave::Square;
         p.routes[1][34] = 1.0;
         voice.set_params(p).unwrap();
-        voice.note_on(110.0).unwrap();
+        voice.note_on(110.0, 127).unwrap();
         for _ in 0..96000 {
             assert!(
                 voice
@@ -128,8 +128,8 @@ fn mod_envelope_changes_timbre_only_when_routed_without_changing_amp() {
     let mut slow_params = params;
     slow_params.globals[8..].copy_from_slice(&[1.0, 1.0, 0.2, 10.0]);
     slow.set_params(slow_params).unwrap();
-    fast.note_on(220.0).unwrap();
-    slow.note_on(220.0).unwrap();
+    fast.note_on(220.0, 127).unwrap();
+    slow.note_on(220.0, 127).unwrap();
     for _ in 0..4800 {
         assert_eq!(fast.next_frame(), slow.next_frame());
     }
@@ -159,7 +159,7 @@ fn mod_envelope_changes_timbre_only_when_routed_without_changing_amp() {
     assert_eq!(fast.telemetry().env, slow.telemetry().env);
     assert!(fast.telemetry().env > 0.9);
     let before = slow.telemetry().mod_env;
-    slow.note_on(220.0).unwrap();
+    slow.note_on(220.0, 127).unwrap();
     assert_eq!(slow.telemetry().mod_env, before);
     slow.next_frame();
     assert!(slow.telemetry().mod_env > before);
@@ -171,7 +171,7 @@ fn mod_envelope_self_route_uses_previous_control_tick() {
     let mut params = VoiceParams::default();
     params.routes[2][36] = 0.5;
     voice.set_params(params).unwrap();
-    voice.note_on(220.0).unwrap();
+    voice.note_on(220.0, 127).unwrap();
     let base = params.normalized()[36];
     for _ in 0..8 {
         voice.next_frame();
@@ -181,4 +181,140 @@ fn mod_envelope_self_route_uses_previous_control_tick() {
     voice.next_frame();
     assert!((voice.telemetry().effective[36] - (base + previous * 0.5)).abs() < 1e-6);
     assert!(voice.telemetry().mod_env > previous);
+}
+
+#[test]
+fn note_sources_change_audio_only_when_routed() {
+    let mut params = VoiceParams::default();
+    params.oscillators[0].waveform = Waveform::Saw;
+    params.globals[..4].copy_from_slice(&[0.001, 0.001, 1.0, 0.2]);
+    params.globals[6] = 100.0;
+    let mut loud = Voice::new(48000.0, 21).unwrap();
+    let mut quiet = Voice::new(48000.0, 21).unwrap();
+    loud.set_params(params).unwrap();
+    quiet.set_params(params).unwrap();
+    loud.note_on(440.0, 127).unwrap();
+    quiet.note_on(440.0, 0).unwrap();
+    for _ in 0..2400 {
+        assert_eq!(loud.next_frame(), quiet.next_frame());
+    }
+    // Direct Voice velocity zero is a valid modulation value, not note-off.
+    assert!(!quiet.is_silent());
+    for source in [3, 4] {
+        let mut routed = Voice::new(48000.0, 22).unwrap();
+        let mut dry = Voice::new(48000.0, 22).unwrap();
+        dry.set_params(params).unwrap();
+        let mut modulated = params;
+        modulated.routes[source][34] = 1.0;
+        routed.set_params(modulated).unwrap();
+        let frequency = 440.0 * 2.0_f64.powf((84.0 - 69.0) / 12.0);
+        routed.note_on(frequency, 127).unwrap();
+        dry.note_on(frequency, 127).unwrap();
+        let mut wet_energy = 0.0_f64;
+        let mut dry_energy = 0.0_f64;
+        for frame in 0..9600 {
+            let wet = routed.next_frame();
+            let dry = dry.next_frame();
+            if frame >= 2400 {
+                wet_energy += (wet[0] as f64).powi(2);
+                dry_energy += (dry[0] as f64).powi(2);
+            }
+        }
+        assert!(wet_energy > dry_energy * 4.0, "source {source}");
+        assert_eq!(routed.params(), &modulated);
+    }
+}
+
+#[test]
+fn note_sources_apply_at_trigger_and_survive_release_until_retrigger() {
+    let mut voice = Voice::new(48000.0, 23).unwrap();
+    let mut params = VoiceParams::default();
+    params.routes[3][2] = 0.5; // Phase must be ready before oscillator trigger.
+    params.routes[4][34] = 0.25;
+    params.globals[6] = 1000.0;
+    voice.set_params(params).unwrap();
+    for (frequency, velocity, key) in [
+        (440.0 * 2.0_f64.powf(-9.0 / 12.0), 127, 0.0),
+        (440.0 * 2.0_f64.powf(-21.0 / 12.0), 32, -0.2),
+        (0.0, 0, -1.0),
+        (f64::MIN_POSITIVE, 1, -1.0),
+        (f64::MAX, 127, 1.0),
+    ] {
+        voice.note_on(frequency, velocity).unwrap();
+        let t = voice.telemetry();
+        assert_eq!(t.velocity, velocity as f32 / 127.0);
+        assert!((t.key_track - key).abs() < 1e-6);
+        assert!((t.effective[2] - t.velocity * 0.5).abs() < 1e-6);
+        assert!((t.effective[34] - (params.normalized()[34] + key * 0.25)).abs() < 1e-6);
+        for _ in 0..1000 {
+            voice.next_frame();
+        }
+        voice.note_off();
+        for _ in 0..100 {
+            voice.next_frame();
+        }
+        assert_eq!(voice.telemetry().velocity, t.velocity);
+        assert_eq!(voice.telemetry().key_track, t.key_track);
+    }
+}
+
+#[test]
+fn invalid_note_sources_preserve_running_audio_and_telemetry() {
+    let mut reference = Voice::new(48000.0, 24).unwrap();
+    let mut rejected = Voice::new(48000.0, 24).unwrap();
+    let mut params = VoiceParams::default();
+    params.routes[3][34] = -0.4;
+    params.routes[4][2] = 0.5;
+    params.oscillators[0].phase_random = 0.8;
+    for voice in [&mut reference, &mut rejected] {
+        voice.set_params(params).unwrap();
+        voice.note_on(440.0, 32).unwrap();
+        for _ in 0..1000 {
+            voice.next_frame();
+        }
+    }
+    let before = rejected.telemetry();
+    for (frequency, velocity) in [
+        (220.0, 128),
+        (220.0, 255),
+        (f64::NAN, 127),
+        (-1.0, 0),
+        (f64::INFINITY, 1),
+    ] {
+        assert!(rejected.note_on(frequency, velocity).is_err());
+        let after = rejected.telemetry();
+        assert_eq!(after.velocity, before.velocity);
+        assert_eq!(after.key_track, before.key_track);
+        assert_eq!(after.effective, before.effective);
+    }
+    for _ in 0..2000 {
+        assert_eq!(reference.next_frame(), rejected.next_frame());
+    }
+}
+
+#[test]
+fn note_source_phase_routes_are_sampled_by_the_same_trigger() {
+    let frequency = 440.0 * 2.0_f64.powf((84.0 - 69.0) / 12.0);
+    for source in [3, 4] {
+        let mut routed = Voice::new(48000.0, 25).unwrap();
+        let mut reference = Voice::new(48000.0, 25).unwrap();
+        let mut params = VoiceParams::default();
+        params.globals[..4].copy_from_slice(&[0.001, 0.001, 1.0, 0.1]);
+        params.routes[source][2] = 0.5;
+        routed.set_params(params).unwrap();
+        // First trigger has a different source value, so stale sampling fails.
+        routed.note_on(220.0, 0).unwrap();
+        routed.note_on(frequency, 127).unwrap();
+        params.routes[source][2] = 0.0;
+        params.oscillators[0].phase = if source == 3 { 0.5 } else { 0.2 };
+        reference.set_params(params).unwrap();
+        reference.note_on(frequency, 127).unwrap();
+        for _ in 0..1000 {
+            let actual = routed.next_frame();
+            let expected = reference.next_frame();
+            for channel in 0..2 {
+                assert!((actual[channel] - expected[channel]).abs() < 1e-6);
+            }
+        }
+    }
 }

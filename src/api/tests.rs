@@ -181,3 +181,43 @@ fn mod_envelope_shapes_filter_independently_through_audio_renderer() {
     assert_eq!(renderer.active_voice_count(), 0);
     assert!(actual.iter().flatten().all(|v| *v == 0.0));
 }
+
+#[test]
+fn performance_routes_change_rendered_audio_and_can_be_removed_live() {
+    for source in [3, 4] {
+        let synth = Synth::new();
+        let baseline = Synth::new();
+        for controls in [&synth, &baseline] {
+            controls.set_global(0, 0.001).unwrap();
+            controls.set_global(1, 0.001).unwrap();
+            controls.set_global(2, 1.0).unwrap();
+            controls.set_global(6, 100.0).unwrap();
+        }
+        synth.set_route(34, source, 1.0).unwrap();
+        let mut renderer = AudioRenderer::new(synth.clone(), 48_000.0, 42).unwrap();
+        let mut reference = AudioRenderer::new(baseline.clone(), 48_000.0, 42).unwrap();
+        synth.note_on(84, 100).unwrap();
+        baseline.note_on(84, 100).unwrap();
+        let mut actual = [[0.0; 2]; 4096];
+        let mut dry = actual;
+        renderer.render(&mut actual);
+        reference.render(&mut dry);
+        let energy = |frames: &[[f32; 2]]| {
+            frames
+                .iter()
+                .flatten()
+                .map(|v| f64::from(*v).powi(2))
+                .sum::<f64>()
+        };
+        assert!(energy(&actual) > energy(&dry) * 4.0);
+        let meters = synth.telemetry();
+        assert!((meters.velocity - 100.0 / 127.0).abs() < 1e-6);
+        assert!((meters.key_track - 0.4).abs() < 1e-6);
+        synth.set_route(34, source, 0.0).unwrap();
+        for _ in 0..4 {
+            renderer.render(&mut actual);
+            reference.render(&mut dry);
+        }
+        assert!((energy(&actual) / energy(&dry) - 1.0).abs() < 0.001);
+    }
+}

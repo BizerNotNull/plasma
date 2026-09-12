@@ -111,6 +111,7 @@ struct Request {
     patch: Patch,
     sample_rate: u32,
     frequency: f64,
+    velocity: u8,
     duration: f64,
     gate: f64,
     seed: u64,
@@ -249,7 +250,9 @@ fn describe() -> Result<()> {
         "controls": controls,
         "waveforms": ["sine", "triangle", "saw", "pulse"],
         "lfo_waves": ["sine", "triangle", "saw", "square"],
-        "sources": ["amp_env", "lfo", "mod_env"],
+        "sources": ["amp_env", "lfo", "mod_env", "velocity", "key_track"],
+        "velocity": "Required integer 0..127; modulation only, no automatic amplitude scaling.",
+        "key_track": "clamp((69 + 12*log2(frequency/440) - 60)/60, -1, 1); MIDI 60 is zero.",
     });
     let mut stdout = std::io::stdout().lock();
     serde_json::to_writer(&mut stdout, &description)?;
@@ -276,6 +279,9 @@ fn render(request_path: &Path, output_path: &Path) -> Result<()> {
     {
         return Err("frequency must be finite, positive and below sample_rate / 2".into());
     }
+    if request.velocity > 127 {
+        return Err("velocity must be an integer in 0..=127".into());
+    }
     if !request.duration.is_finite()
         || !request.gate.is_finite()
         || request.gate <= 0.0
@@ -296,7 +302,7 @@ fn render(request_path: &Path, output_path: &Path) -> Result<()> {
     let params = request.patch.to_params()?;
     let mut voice = Voice::new(f64::from(request.sample_rate), request.seed)?;
     voice.set_params(params)?;
-    voice.note_on(request.frequency)?;
+    voice.note_on(request.frequency, request.velocity)?;
     let output = File::create(output_path)
         .map_err(|error| format!("cannot create WAV {}: {error}", output_path.display()))?;
     let mut buffered = BufWriter::new(output);
@@ -356,7 +362,7 @@ fn run() -> Result<()> {
     }
     if first == "--help" || first == "-h" {
         println!(
-            "Usage: plasma-render --describe | plasma-render REQUEST.json OUTPUT.wav\nRenders unclipped float32 stereo WAV; gate and duration round to the nearest frame.\nSample rate: 8000..192000 Hz. Maximum duration: 30 seconds. Maximum request: 65536 bytes.\nRoutes are [AMP ENV, LFO, MOD ENV], each with {TARGET_COUNT} signed depths in [-1, 1]."
+            "Usage: plasma-render --describe | plasma-render REQUEST.json OUTPUT.wav\nRenders unclipped float32 stereo WAV; gate and duration round to the nearest frame.\nSample rate: 8000..192000 Hz. Maximum duration: 30 seconds. Maximum request: 65536 bytes.\nRequest velocity: integer 0..127, modulation only.\nRoutes are [AMP ENV, LFO, MOD ENV, Velocity, Key Track], each with {TARGET_COUNT} signed depths in [-1, 1].\nKey Track: MIDI 60 = zero, 60 semitones per unit, clamped to [-1, 1]; depth is normalized target travel."
         );
         return Ok(());
     }

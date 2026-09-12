@@ -110,11 +110,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let env_depths = Rc::new(VecModel::from(params.routes[0].to_vec()));
     let lfo_depths = Rc::new(VecModel::from(params.routes[1].to_vec()));
     let mod_env_depths = Rc::new(VecModel::from(params.routes[2].to_vec()));
+    let velocity_depths = Rc::new(VecModel::from(params.routes[3].to_vec()));
+    let key_track_depths = Rc::new(VecModel::from(params.routes[4].to_vec()));
     let effective = Rc::new(VecModel::from(params.normalized().to_vec()));
     window.set_globals(globals.clone().into());
     window.set_env_depths(env_depths.clone().into());
     window.set_lfo_depths(lfo_depths.clone().into());
     window.set_mod_env_depths(mod_env_depths.clone().into());
+    window.set_velocity_depths(velocity_depths.clone().into());
+    window.set_key_track_depths(key_track_depths.clone().into());
     window.set_effective_values(effective.clone().into());
     window.set_lfo_wave(0);
     window.set_lfo_retrigger(params.lfo_retrigger);
@@ -157,6 +161,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if mod_env_depths.row_data(i) != Some(params.routes[2][i]) {
                         mod_env_depths.set_row_data(i, params.routes[2][i]);
                     }
+                    if velocity_depths.row_data(i) != Some(params.routes[3][i]) {
+                        velocity_depths.set_row_data(i, params.routes[3][i]);
+                    }
+                    if key_track_depths.row_data(i) != Some(params.routes[4][i]) {
+                        key_track_depths.set_row_data(i, params.routes[4][i]);
+                    }
                 }
             }
         }
@@ -194,6 +204,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let weak = window.as_weak();
         let synth = synth.clone();
         let mut previous = synth.telemetry();
+        window.set_velocity_value(previous.velocity);
+        window.set_key_track_value(previous.key_track);
         move || {
             let Some(window) = weak.upgrade() else { return };
             let telemetry = synth.telemetry();
@@ -205,6 +217,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             if telemetry.mod_env != previous.mod_env {
                 window.set_mod_env_value(telemetry.mod_env);
+            }
+            if telemetry.velocity != previous.velocity {
+                window.set_velocity_value(telemetry.velocity);
+            }
+            if telemetry.key_track != previous.key_track {
+                window.set_key_track_value(telemetry.key_track);
             }
             for (i, value) in telemetry.effective.into_iter().enumerate() {
                 if value != previous.effective[i] {
