@@ -84,6 +84,8 @@ pub struct VoiceParams {
     pub glide: f32,
     /// Overlapping notes slide on one voice instead of stacking.
     pub legato: bool,
+    /// Hard-sync each oscillator to oscillator 0's first unison wrap. Index 0 is ignored.
+    pub sync: [bool; OSCILLATOR_COUNT],
     /// [source: AMP ENV=0 / LFO=1 / MOD ENV=2 / Velocity=3 / KeyTrack=4][destination].
     /// Zero removes a route. Key tracking is centered on MIDI 60, at 60 semitones
     /// per unit; depths use normalized target travel, not exact cutoff tracking.
@@ -104,6 +106,7 @@ impl Default for VoiceParams {
             filter_mode: FilterMode::Lowpass,
             glide: 0.0,
             legato: false,
+            sync: [false; OSCILLATOR_COUNT],
             routes: [[0.0; TARGET_COUNT]; SOURCE_COUNT],
         }
     }

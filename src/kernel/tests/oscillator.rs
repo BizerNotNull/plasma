@@ -155,3 +155,75 @@ fn pulse_duty_and_nyquist_edges_remain_finite() {
         / 1000.0;
     assert!((mean + 0.5).abs() < 1e-6);
 }
+
+fn period_error(frames: &[f32], period: usize) -> f64 {
+    frames[period..]
+        .iter()
+        .zip(&frames[..frames.len() - period])
+        .map(|(a, b)| (a - b).abs() as f64)
+        .sum::<f64>()
+        / (frames.len() - period) as f64
+}
+
+#[test]
+fn hard_sync_locks_slave_to_master_period() {
+    fn render(sync: bool) -> Vec<f32> {
+        let mut bank = OscillatorBank::new(48_000.0, 1).unwrap();
+        bank.set_params(
+            0,
+            OscillatorParams {
+                waveform: Waveform::Saw,
+                level: 0.0,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        bank.set_params(
+            1,
+            OscillatorParams {
+                waveform: Waveform::Saw,
+                pitch: 7.0,
+                level: 1.0,
+                pan: -1.0,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        bank.set_sync(1, sync).unwrap();
+        bank.set_params(
+            2,
+            OscillatorParams {
+                level: 0.0,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        bank.note_on(200.0).unwrap();
+        (0..4800).map(|_| bank.next_frame()[0]).collect()
+    }
+
+    let free = render(false);
+    let synced = render(true);
+    assert_ne!(free, synced);
+    assert!(synced.iter().all(|s| s.is_finite() && s.abs() <= 1.5));
+    let sync_err = period_error(&synced[480..], 240);
+    let free_err = period_error(&free[480..], 240);
+    assert!(
+        sync_err < free_err * 0.05,
+        "sync period error {sync_err} vs free {free_err}"
+    );
+}
+
+#[test]
+fn oscillator_zero_sync_flag_does_not_change_audio() {
+    let params = OscillatorParams {
+        waveform: Waveform::Saw,
+        ..Default::default()
+    };
+    let mut synced = bank(params);
+    synced.set_sync(0, true).unwrap();
+    let mut free = bank(params);
+    for _ in 0..512 {
+        assert_eq!(synced.next_frame(), free.next_frame());
+    }
+}

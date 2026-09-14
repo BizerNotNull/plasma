@@ -1,6 +1,6 @@
 use plasma_kernel::{
-    FilterMode, GLOBAL_COUNT, LfoWave, OscillatorParams, SOURCE_COUNT, TARGET_COUNT, Telemetry,
-    VoiceParams, Waveform,
+    FilterMode, GLOBAL_COUNT, LfoWave, OSCILLATOR_COUNT, OscillatorParams, SOURCE_COUNT,
+    TARGET_COUNT, Telemetry, VoiceParams, Waveform,
 };
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
@@ -10,7 +10,7 @@ pub(crate) struct Controls {
 }
 
 const WORDS: usize =
-    plasma_kernel::OSCILLATOR_COUNT * 10 + 6 + GLOBAL_COUNT + SOURCE_COUNT * TARGET_COUNT;
+    OSCILLATOR_COUNT * 10 + 6 + OSCILLATOR_COUNT + GLOBAL_COUNT + SOURCE_COUNT * TARGET_COUNT;
 
 pub(crate) struct Published {
     version: AtomicU64,
@@ -65,6 +65,10 @@ impl Published {
         n += 1;
         words[n] = u64::from(c.params.legato);
         n += 1;
+        for s in c.params.sync {
+            words[n] = u64::from(s);
+            n += 1;
+        }
         for v in c.params.routes.into_iter().flatten() {
             words[n] = (v as f64).to_bits();
             n += 1;
@@ -133,6 +137,10 @@ impl Published {
         n += 1;
         c.params.legato = words[n] != 0;
         n += 1;
+        for s in &mut c.params.sync {
+            *s = words[n] != 0;
+            n += 1;
+        }
         for v in c.params.routes.iter_mut().flatten() {
             *v = f64::from_bits(words[n]) as f32;
             n += 1;

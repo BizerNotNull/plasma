@@ -84,6 +84,9 @@ impl Voice {
             self.base = params.normalized();
             self.params = params;
             self.clock = 0;
+            for i in 0..OSCILLATOR_COUNT {
+                self.bank.set_sync(i, params.sync[i])?;
+            }
         }
         Ok(())
     }

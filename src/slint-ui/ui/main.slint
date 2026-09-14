@@ -13,6 +13,7 @@ export struct OscillatorState {
     detune: float,
     pan: float,
     level: float,
+    sync: bool,
 }
 
 // Controlled input: gestures emit edits without severing backend value bindings.
@@ -105,6 +106,13 @@ component OscillatorCard inherits Panel {
         HorizontalLayout {
             Text { text: "OSC 0\{root.number}"; color: #e6edf2; font-size: 15px; font-weight: 700; }
             Text { text: "ANALOG"; color: #a4b777; font-size: 9px; horizontal-alignment: right; vertical-alignment: center; }
+            if root.number > 1: Action {
+                text: root.state.sync ? "SYNC: ON" : "SYNC: OFF";
+                min-width: 72px;
+                accent: #b8e480;
+                selected: root.state.sync;
+                activated => { root.edited(10, root.state.sync ? 0 : 1); }
+            }
         }
         HorizontalLayout {
             spacing: 3px;
@@ -126,7 +134,7 @@ component OscillatorCard inherits Panel {
             Knob { row: 2; col: 1; target: (root.number - 1) * 9 + 6; label: "DETUNE"; unit: " ct"; value: root.state.detune; edited(v) => { root.edited(7, v); } }
             Knob { row: 2; col: 2; target: (root.number - 1) * 9 + 8; label: "LEVEL"; unit: "%"; default-value: 100; value: root.state.level; edited(v) => { root.edited(9, v); } }
         }
-        Text { text: "Phase / rand: next note · Unison: whole voices"; color: #91a0ac; font-size: 9px; }
+        Text { text: "Phase / rand: next note · Unison: whole voices · Sync: OSC 1 wrap"; color: #91a0ac; font-size: 9px; }
     }
 }
 

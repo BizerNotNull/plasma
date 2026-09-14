@@ -1,4 +1,5 @@
 //! One oscillator with up to four symmetrically detuned unison voices.
+//! Oscillators 1 and 2 may hard-sync to oscillator 0's first unison wrap.
 
 use crate::{Error, dsp};
 
@@ -86,6 +87,8 @@ pub(crate) struct Oscillator {
     phases: [f64; MAX_UNISON],
     steps: [f64; MAX_UNISON],
     gains: [f64; 2],
+    wrapped: bool,
+    sync: bool,
 }
 
 impl Oscillator {
@@ -95,6 +98,8 @@ impl Oscillator {
             phases: [0.0; MAX_UNISON],
             steps: [0.0; MAX_UNISON],
             gains: [0.0; 2],
+            wrapped: false,
+            sync: false,
         }
     }
 
@@ -127,8 +132,17 @@ impl Oscillator {
         }
     }
 
+    pub(crate) fn wrapped(&self) -> bool {
+        self.wrapped
+    }
+
+    pub(crate) fn hard_sync(&mut self) {
+        self.phases = [0.0; MAX_UNISON];
+    }
+
     pub(crate) fn next(&mut self) -> [f64; 2] {
         let mut mono = 0.0;
+        self.wrapped = false;
         for i in 0..usize::from(self.params.unison) {
             let step = self.steps[i];
             if step == 0.0 {
@@ -143,6 +157,9 @@ impl Oscillator {
             self.phases[i] += step;
             if self.phases[i] >= 1.0 {
                 self.phases[i] -= 1.0;
+                if i == 0 {
+                    self.wrapped = true;
+                }
             }
         }
         [mono * self.gains[0], mono * self.gains[1]]

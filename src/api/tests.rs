@@ -257,3 +257,33 @@ fn set_glide_and_legato_round_trip() {
     assert_eq!(synth.voice_params().unwrap().glide, 0.25);
     assert!(synth.voice_params().unwrap().legato);
 }
+
+#[test]
+fn oscillator_sync_round_trips_and_changes_rendered_audio() {
+    let free = Synth::new();
+    let synced = Synth::new();
+    let slave = OscillatorParams {
+        waveform: Waveform::Saw,
+        pitch: 7.0,
+        level: 1.0,
+        ..Default::default()
+    };
+    free.set_params(1, slave).unwrap();
+    synced.set_params(1, slave).unwrap();
+    synced.set_sync(1, true).unwrap();
+    assert!(synced.voice_params().unwrap().sync[1]);
+    assert!(!free.voice_params().unwrap().sync[1]);
+    assert!(!synced.voice_params().unwrap().sync[0]);
+    assert!(synced.set_sync(3, true).is_err());
+
+    free.note_on(60, 127).unwrap();
+    synced.note_on(60, 127).unwrap();
+    let mut free_r = AudioRenderer::new(free, 48_000.0, 3).unwrap();
+    let mut sync_r = AudioRenderer::new(synced, 48_000.0, 3).unwrap();
+    let mut a = [0.0_f32; 2048];
+    let mut b = [0.0_f32; 2048];
+    free_r.render_interleaved(&mut a, 2);
+    sync_r.render_interleaved(&mut b, 2);
+    assert_ne!(a, b);
+    assert!(b.iter().all(|s| s.is_finite()));
+}

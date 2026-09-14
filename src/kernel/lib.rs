@@ -17,7 +17,9 @@
 //! limiter or parameter smoothing is applied. The three stereo outputs are
 //! summed without clipping; callers must leave headroom. Saw/Pulse use PolyBLEP;
 //! Triangle is a basic, non-band-limited waveform. Pulse can contain DC at duties
-//! other than 50%. Parameters are copied in at control rate, not shared atomically.
+//! other than 50%. Oscillators 1 and 2 may hard-sync to oscillator 0's first
+//! unison wrap, resetting every unison phase to 0. Parameters are copied in at
+//! control rate, not shared atomically.
 //!
 //! [`Voice`] wraps the unchanged oscillator bank with independent AMP and MOD
 //! ADSRs, a free or retriggered LFO, a stereo state-variable filter

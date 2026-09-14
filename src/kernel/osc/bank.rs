@@ -46,6 +46,23 @@ impl OscillatorBank {
         Ok(())
     }
 
+    /// Index 0 is stored but ignored. Invalid indices leave the bank unchanged.
+    pub fn set_sync(&mut self, index: usize, sync: bool) -> Result<(), Error> {
+        let osc = self
+            .oscillators
+            .get_mut(index)
+            .ok_or(Error::InvalidOscillatorIndex)?;
+        osc.sync = sync;
+        Ok(())
+    }
+
+    pub fn sync(&self, index: usize) -> Result<bool, Error> {
+        self.oscillators
+            .get(index)
+            .map(|osc| osc.sync)
+            .ok_or(Error::InvalidOscillatorIndex)
+    }
+
     /// Retunes without resetting phase. Zero silences the bank and freezes phase.
     /// Individual voices at or above Nyquist are also silent and frozen.
     pub fn set_frequency(&mut self, frequency: f64) -> Result<(), Error> {
@@ -75,10 +92,18 @@ impl OscillatorBank {
     }
 
     /// Produces one [left, right] frame. No heap allocation or locks.
+    /// Oscillators 1 and 2 with `sync` reset when oscillator 0's first voice wraps.
     pub fn next_frame(&mut self) -> [f32; 2] {
         let mut frame = [0.0; 2];
-        for osc in &mut self.oscillators {
+        let mut master_wrapped = false;
+        for (i, osc) in self.oscillators.iter_mut().enumerate() {
+            if i > 0 && osc.sync && master_wrapped {
+                osc.hard_sync();
+            }
             let sample = osc.next();
+            if i == 0 {
+                master_wrapped = osc.wrapped();
+            }
             frame[0] += sample[0];
             frame[1] += sample[1];
         }

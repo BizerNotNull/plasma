@@ -26,7 +26,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let window = MainWindow::new()?;
     performance.mark("window_created_ms");
     let initial = (0..3)
-        .map(|index| synth.params(index).map(oscillator_state))
+        .map(|index| {
+            synth.voice_params().and_then(|voice| {
+                synth
+                    .params(index)
+                    .map(|params| oscillator_state(params, voice.sync[index]))
+            })
+        })
         .collect::<Result<Vec<_>, _>>()?;
     let oscillators = Rc::new(VecModel::from(initial));
     window.set_oscillators(oscillators.clone().into());
@@ -229,8 +235,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
             show_result(&window, edit_parameter(&synth, index, field, value));
             // Read back accepted values, including after a rejected edit.
-            match synth.params(index) {
-                Ok(params) => oscillators.set_row_data(index, oscillator_state(params)),
+            match synth.voice_params().and_then(|voice| {
+                synth
+                    .params(index)
+                    .map(|params| (params, voice.sync[index]))
+            }) {
+                Ok((params, sync)) => oscillators.set_row_data(index, oscillator_state(params, sync)),
                 Err(error) => {
                     window.set_control_error(error.to_string().into());
                 }
