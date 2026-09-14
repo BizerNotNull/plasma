@@ -574,3 +574,43 @@ fn white_noise_is_deterministic_per_seed_and_reaches_the_filter() {
     };
     assert!(bass(&hp) < bass(&lp));
 }
+
+#[test]
+fn unison_spread_widens_stereo_and_rejects_invalid() {
+    let mut narrow = Voice::new(48_000.0, 4).unwrap();
+    let mut wide = Voice::new(48_000.0, 4).unwrap();
+    let mut params = VoiceParams::default();
+    params.oscillators[0].waveform = Waveform::Saw;
+    params.oscillators[0].unison = 4;
+    params.oscillators[0].detune = 18.0;
+    params.globals[..4].copy_from_slice(&[0.001, 0.001, 1.0, 0.2]);
+    params.globals[6] = 18000.0;
+    narrow.set_params(params).unwrap();
+    params.spread[0] = 1.0;
+    wide.set_params(params).unwrap();
+    params.spread[0] = 1.1;
+    assert!(wide.set_params(params).is_err());
+    assert_eq!(wide.params().spread[0], 1.0);
+    narrow.note_on(220.0, 127).unwrap();
+    wide.note_on(220.0, 127).unwrap();
+    let mut different = false;
+    let mut wide_stereo = false;
+    let mut narrow_centered = true;
+    for _ in 0..2048 {
+        let a = narrow.next_frame();
+        let b = wide.next_frame();
+        assert!(b.iter().all(|s| s.is_finite() && s.abs() <= 1.0));
+        if a != b {
+            different = true;
+        }
+        if b[0] != b[1] {
+            wide_stereo = true;
+        }
+        if a[0] != a[1] {
+            narrow_centered = false;
+        }
+    }
+    assert!(different);
+    assert!(wide_stereo);
+    assert!(narrow_centered);
+}

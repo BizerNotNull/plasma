@@ -108,6 +108,29 @@ impl OscillatorBank {
             .ok_or(Error::InvalidOscillatorIndex)
     }
 
+    /// Stereo spread of unison voices around the oscillator pan, 0..=1.
+    /// Zero keeps every unison voice at that pan. Invalid indices or amounts
+    /// leave the bank unchanged.
+    pub fn set_spread(&mut self, index: usize, amount: f64) -> Result<(), Error> {
+        let osc = self
+            .oscillators
+            .get_mut(index)
+            .ok_or(Error::InvalidOscillatorIndex)?;
+        if !amount.is_finite() || !(0.0..=1.0).contains(&amount) {
+            return Err(Error::InvalidParameter("spread"));
+        }
+        osc.spread = amount;
+        osc.update(self.frequency, self.sample_rate);
+        Ok(())
+    }
+
+    pub fn spread(&self, index: usize) -> Result<f64, Error> {
+        self.oscillators
+            .get(index)
+            .map(|osc| osc.spread)
+            .ok_or(Error::InvalidOscillatorIndex)
+    }
+
     /// Retunes without resetting phase. Zero silences the bank and freezes phase.
     /// Individual voices at or above Nyquist are also silent and frozen.
     pub fn set_frequency(&mut self, frequency: f64) -> Result<(), Error> {

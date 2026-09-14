@@ -16,6 +16,7 @@ export struct OscillatorState {
     sync: bool,
     fm: float,
     ring: float,
+    spread: float,
 }
 
 // Controlled input: gestures emit edits without severing backend value bindings.
@@ -135,9 +136,10 @@ component OscillatorCard inherits Panel {
             Knob { row: 1; col: 2; target: (root.number - 1) * 9 + 4; label: "PULSE WIDTH"; unit: "%"; minimum: 1; maximum: 99; default-value: 50; value: root.state.pulse-width; edited(v) => { root.edited(5, v); } }
             Knob { row: 2; col: 0; target: (root.number - 1) * 9 + 5; label: "UNISON"; unit: " v"; minimum: 1; maximum: 4; default-value: 1; value: root.state.unison; edited(v) => { root.edited(6, round(v)); } }
             Knob { row: 2; col: 1; target: (root.number - 1) * 9 + 6; label: "DETUNE"; unit: " ct"; value: root.state.detune; edited(v) => { root.edited(7, v); } }
-            Knob { row: 2; col: 2; target: (root.number - 1) * 9 + 8; label: "LEVEL"; unit: "%"; default-value: 100; value: root.state.level; edited(v) => { root.edited(9, v); } }
+            Knob { row: 2; col: 2; label: "SPREAD"; unit: "%"; value: root.state.spread; edited(v) => { root.edited(13, v); } }
+            Knob { row: 3; col: 0; target: (root.number - 1) * 9 + 8; label: "LEVEL"; unit: "%"; default-value: 100; value: root.state.level; edited(v) => { root.edited(9, v); } }
         }
-        Text { text: "Phase / rand: next note · Unison: whole voices · Sync: OSC 1 wrap · FM/Ring: OSC 1 audio-rate"; color: #91a0ac; font-size: 9px; }
+        Text { text: "Phase / rand: next note · Unison: whole voices · Spread: stereo unison · Sync: OSC 1 wrap · FM/Ring: OSC 1 audio-rate"; color: #91a0ac; font-size: 9px; }
         if root.number > 1: HorizontalLayout {
             spacing: 4px;
             Knob { label: "FM OSC 1"; unit: "%"; value: root.state.fm; edited(v) => { root.edited(11, v); } }

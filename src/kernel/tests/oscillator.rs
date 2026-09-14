@@ -629,3 +629,86 @@ fn full_ring_inverts_carrier_when_modulator_is_negative() {
     assert!(pos > 0.9, "modulator +1 must keep carrier, got {pos}");
     assert!(neg < -0.9, "modulator -1 must invert carrier, got {neg}");
 }
+
+#[test]
+fn zero_spread_keeps_unison_voices_at_oscillator_pan() {
+    let params = OscillatorParams {
+        waveform: Waveform::Sine,
+        unison: 4,
+        detune: 17.0,
+        pan: -0.4,
+        level: 0.6,
+        ..Default::default()
+    };
+    let mut plain = bank(params);
+    let mut zero = bank(params);
+    zero.set_spread(0, 0.0).unwrap();
+    for _ in 0..512 {
+        assert_eq!(plain.next_frame(), zero.next_frame());
+    }
+}
+
+#[test]
+fn unison_spread_pans_outer_voices_and_rejects_invalid() {
+    let params = OscillatorParams {
+        waveform: Waveform::Sine,
+        phase: 0.2,
+        unison: 2,
+        detune: 23.0,
+        pan: 0.0,
+        level: 0.4,
+        ..Default::default()
+    };
+    let mut source = bank(params);
+    assert!(source.set_spread(3, 1.0).is_err());
+    assert!(source.set_spread(0, -0.1).is_err());
+    assert!(source.set_spread(0, 1.1).is_err());
+    assert!(source.set_spread(0, f64::NAN).is_err());
+    assert_eq!(source.spread(0).unwrap(), 0.0);
+    source.set_spread(0, 1.0).unwrap();
+    assert_eq!(source.spread(0).unwrap(), 1.0);
+
+    let mut centered = bank(params);
+    let mut left_eq_right = true;
+    let mut different = false;
+    for n in 0..1000 {
+        let hz0 = 440.0 * 2.0_f64.powf(-23.0 / 1200.0);
+        let hz1 = 440.0 * 2.0_f64.powf(23.0 / 1200.0);
+        let s0 = (std::f64::consts::TAU * (0.2 + n as f64 * hz0 / 48_000.0)).sin();
+        let s1 = (std::f64::consts::TAU * (0.2 + n as f64 * hz1 / 48_000.0)).sin();
+        let frame = source.next_frame();
+        assert!((f64::from(frame[0]) - s0 * 0.2).abs() < 1e-6);
+        assert!((f64::from(frame[1]) - s1 * 0.2).abs() < 1e-6);
+        let c = centered.next_frame();
+        if c[0] != c[1] {
+            left_eq_right = false;
+        }
+        if frame != c {
+            different = true;
+        }
+    }
+    assert!(left_eq_right);
+    assert!(different);
+
+    let mut rejected = bank(params);
+    let mut reference = bank(params);
+    assert!(rejected.set_spread(0, 1.1).is_err());
+    for _ in 0..8 {
+        assert_eq!(rejected.next_frame(), reference.next_frame());
+    }
+}
+
+#[test]
+fn single_unison_voice_ignores_spread() {
+    let params = OscillatorParams {
+        waveform: Waveform::Sine,
+        pan: 0.3,
+        ..Default::default()
+    };
+    let mut a = bank(params);
+    let mut b = bank(params);
+    b.set_spread(0, 1.0).unwrap();
+    for _ in 0..256 {
+        assert_eq!(a.next_frame(), b.next_frame());
+    }
+}

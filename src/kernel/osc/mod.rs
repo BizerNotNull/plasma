@@ -1,7 +1,8 @@
 //! One oscillator with up to four symmetrically detuned unison voices.
 //! Oscillators 1 and 2 may hard-sync to oscillator 0's first unison wrap,
 //! may be linearly frequency-modulated by oscillator 0's first-unison waveform,
-//! and may ring-modulate against that same pre-gain sample.
+//! and may ring-modulate against that same pre-gain sample. Unison voices may
+//! be stereo-spread around the oscillator pan.
 
 use crate::{Error, dsp};
 
@@ -38,7 +39,7 @@ pub struct OscillatorParams {
     pub unison: u8,
     /// Maximum offset from center in cents, 0..=100. One voice stays centered.
     pub detune: f64,
-    /// Equal-power pan, -1 (left)..=1 (right); applies to all unison voices.
+    /// Equal-power pan, -1 (left)..=1 (right). Spread offsets each unison voice around this.
     pub pan: f64,
     /// Linear amplitude, 0..=1.
     pub level: f64,
@@ -88,7 +89,8 @@ pub(crate) struct Oscillator {
     pub(crate) params: OscillatorParams,
     phases: [f64; MAX_UNISON],
     steps: [f64; MAX_UNISON],
-    gains: [f64; 2],
+    gains: [[f64; 2]; MAX_UNISON],
+    spread: f64,
     wrapped: bool,
     sync: bool,
     fm: f64,
@@ -102,7 +104,8 @@ impl Oscillator {
             params,
             phases: [0.0; MAX_UNISON],
             steps: [0.0; MAX_UNISON],
-            gains: [0.0; 2],
+            gains: [[0.0; 2]; MAX_UNISON],
+            spread: 0.0,
             wrapped: false,
             sync: false,
             fm: 0.0,
@@ -114,7 +117,8 @@ impl Oscillator {
     pub(crate) fn update(&mut self, frequency: f64, sample_rate: f64) {
         let p = self.params;
         let center = frequency * 2.0_f64.powf((p.pitch + p.fine / 100.0) / 12.0);
-        for (i, step) in self.steps.iter_mut().enumerate() {
+        let level = p.level / f64::from(p.unison);
+        for i in 0..MAX_UNISON {
             let position = if p.unison == 1 {
                 0.0
             } else {
@@ -122,16 +126,16 @@ impl Oscillator {
             };
             let increment = center * 2.0_f64.powf(position * p.detune / 1200.0) / sample_rate;
             // Unrepresentable frequencies are silent, never folded or clamped in pitch.
-            *step = if increment > 0.0 && increment < 0.5 {
+            self.steps[i] = if increment > 0.0 && increment < 0.5 {
                 increment
             } else {
                 0.0
             };
+            let voice_pan = (p.pan + position * self.spread).clamp(-1.0, 1.0);
+            let angle = (voice_pan + 1.0) * std::f64::consts::FRAC_PI_4;
+            let (right, left) = angle.sin_cos();
+            self.gains[i] = [left * level, right * level];
         }
-        let angle = (p.pan + 1.0) * std::f64::consts::FRAC_PI_4;
-        let (right, left) = angle.sin_cos();
-        let level = p.level / f64::from(p.unison);
-        self.gains = [left * level, right * level];
     }
 
     pub(crate) fn trigger(&mut self, random: &mut dsp::Random) {
@@ -149,7 +153,7 @@ impl Oscillator {
     }
 
     pub(crate) fn next(&mut self, fm_mod: f64) -> [f64; 2] {
-        let mut mono = 0.0;
+        let mut frame = [0.0; 2];
         self.wrapped = false;
         self.modulator = 0.0;
         let fm = if self.fm > 0.0 {
@@ -173,7 +177,8 @@ impl Oscillator {
                 if i == 0 {
                     self.modulator = sample;
                 }
-                mono += sample;
+                frame[0] += sample * self.gains[i][0];
+                frame[1] += sample * self.gains[i][1];
             }
             self.phases[i] += inc;
             if fm == 0.0 {
@@ -190,6 +195,6 @@ impl Oscillator {
                 }
             }
         }
-        [mono * self.gains[0], mono * self.gains[1]]
+        frame
     }
 }

@@ -92,6 +92,8 @@ pub struct VoiceParams {
     pub fm: [f32; OSCILLATOR_COUNT],
     /// Ring modulation from oscillator 0, 0..=1. Index 0 is ignored.
     pub ring: [f32; OSCILLATOR_COUNT],
+    /// Unison stereo spread around each oscillator pan, 0..=1.
+    pub spread: [f32; OSCILLATOR_COUNT],
     /// [source: AMP ENV=0 / LFO=1 / MOD ENV=2 / Velocity=3 / KeyTrack=4][destination].
     /// Zero removes a route. Key tracking is centered on MIDI 60, at 60 semitones
     /// per unit; depths use normalized target travel, not exact cutoff tracking.
@@ -116,6 +118,7 @@ impl Default for VoiceParams {
             sync: [false; OSCILLATOR_COUNT],
             fm: [0.0; OSCILLATOR_COUNT],
             ring: [0.0; OSCILLATOR_COUNT],
+            spread: [0.0; OSCILLATOR_COUNT],
             routes: [[0.0; TARGET_COUNT]; SOURCE_COUNT],
         }
     }
@@ -146,6 +149,11 @@ impl VoiceParams {
         for amount in self.ring {
             if !amount.is_finite() || !(0.0..=1.0).contains(&amount) {
                 return Err(Error::InvalidParameter("ring"));
+            }
+        }
+        for amount in self.spread {
+            if !amount.is_finite() || !(0.0..=1.0).contains(&amount) {
+                return Err(Error::InvalidParameter("spread"));
             }
         }
         if !self.noise.is_finite() || !(0.0..=1.0).contains(&self.noise) {

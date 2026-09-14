@@ -3,7 +3,8 @@
 //! Velocity and key tracking are per-note constants, retained through release.
 //! Base parameters are never overwritten by modulation. Oscillator phase/random
 //! are sampled at the next trigger; unison modulation rounds to whole voices.
-//! White noise is mixed with the oscillator bank before the filter.
+//! White noise is mixed with the oscillator bank before the filter. Unison stereo
+//! spread is applied per oscillator around its pan.
 
 mod envelope;
 mod filter;
@@ -91,6 +92,7 @@ impl Voice {
                 self.bank.set_sync(i, params.sync[i])?;
                 self.bank.set_fm(i, f64::from(params.fm[i]))?;
                 self.bank.set_ring(i, f64::from(params.ring[i]))?;
+                self.bank.set_spread(i, f64::from(params.spread[i]))?;
             }
         }
         Ok(())

@@ -22,8 +22,9 @@
 //! frequency-modulated by oscillator 0's first-unison waveform (amount 0..=1 maps
 //! to index 0..=8, independent of OSC 1 level). They may also ring-modulate
 //! against that pre-gain sample (`out * (1 - amount + amount * mod)`, amount 0..=1,
-//! independent of OSC 1 level). Parameters are copied in at
-//! control rate, not shared atomically.
+//! independent of OSC 1 level). Unison voices may be stereo-spread around each
+//! oscillator's pan (0..=1; zero keeps every voice at that pan). Parameters are
+//! copied in at control rate, not shared atomically.
 //!
 //! [`Voice`] wraps the unchanged oscillator bank with independent AMP and MOD
 //! ADSRs, a free or retriggered LFO, a stereo state-variable filter

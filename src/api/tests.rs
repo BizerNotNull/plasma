@@ -398,3 +398,38 @@ fn set_noise_round_trips_and_changes_rendered_audio() {
     assert!(b.iter().all(|s| s.is_finite()));
     assert!(b.iter().any(|s| *s != 0.0));
 }
+
+#[test]
+fn oscillator_spread_round_trips_and_widens_stereo() {
+    let narrow = Synth::new();
+    let wide = Synth::new();
+    let unison = OscillatorParams {
+        waveform: Waveform::Saw,
+        unison: 4,
+        detune: 18.0,
+        level: 1.0,
+        ..Default::default()
+    };
+    narrow.set_params(0, unison).unwrap();
+    wide.set_params(0, unison).unwrap();
+    wide.set_spread(0, 1.0).unwrap();
+    assert_eq!(wide.voice_params().unwrap().spread[0], 1.0);
+    assert_eq!(narrow.voice_params().unwrap().spread[0], 0.0);
+    assert!(wide.set_spread(3, 0.5).is_err());
+    assert!(wide.set_spread(0, -0.1).is_err());
+    assert!(wide.set_spread(0, 1.1).is_err());
+    assert_eq!(wide.voice_params().unwrap().spread[0], 1.0);
+
+    narrow.note_on(60, 127).unwrap();
+    wide.note_on(60, 127).unwrap();
+    let mut narrow_r = AudioRenderer::new(narrow, 48_000.0, 5).unwrap();
+    let mut wide_r = AudioRenderer::new(wide, 48_000.0, 5).unwrap();
+    let mut a = [0.0_f32; 4096];
+    let mut b = [0.0_f32; 4096];
+    narrow_r.render_interleaved(&mut a, 2);
+    wide_r.render_interleaved(&mut b, 2);
+    assert_ne!(a, b);
+    assert!(b.iter().all(|s| s.is_finite()));
+    let stereo = b.chunks(2).any(|frame| frame[0] != frame[1]);
+    assert!(stereo);
+}
