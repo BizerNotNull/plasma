@@ -37,8 +37,8 @@ struct Slot {
 /// frequency by `2^(bend * range / 12)` without retriggering or changing key tracking.
 /// Channel sustain (damper) defers note-off while the pedal is down. Releasing
 /// sustain note-offs every unheld slot; all-notes-off still releases immediately.
-/// Pedaled slots count as unheld for stealing. Retriggering a pedaled note reuses
-/// its slot. Legato reuses a pedaled voice after the last physical key is released.
+/// Channel mod wheel is a unipolar matrix source shared by every slot; moving it
+/// does not retrigger, steal, or change velocity/key tracking.
 ///
 /// Legato reuses the most recently triggered held slot. Further keys are stored
 /// in a fixed last-note stack: releasing the sounding note retunes to the
@@ -99,7 +99,12 @@ impl PolySynth {
         for slot in &mut self.slots {
             slot.voice.set_params(params)?;
         }
-        self.idle_telemetry.effective = params.normalized();
+        let mut effective = params.normalized();
+        for (value, depth) in effective.iter_mut().zip(params.routes[5]) {
+            *value = (*value + depth * params.mod_wheel).clamp(0.0, 1.0);
+        }
+        self.idle_telemetry.effective = effective;
+        self.idle_telemetry.mod_wheel = params.mod_wheel;
         let was_legato = self.params.legato;
         let was_sustain = self.params.sustain;
         self.params = params;
@@ -269,8 +274,9 @@ impl PolySynth {
     }
 
     /// Reports the most recently triggered active slot, including release tails.
-    /// With no active slots, all sources are zero and effective values are the base
-    /// snapshot. Modulation belongs to each voice, not to this display selection.
+    /// With no active slots, note sources are zero, channel mod wheel is the live
+    /// parameter, and effective values are the base snapshot plus the wheel mix.
+    /// Other modulation belongs to each voice, not to this display selection.
     pub fn telemetry(&self) -> Telemetry {
         self.slots
             .iter()

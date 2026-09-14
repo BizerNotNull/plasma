@@ -2,7 +2,7 @@ use crate::{Error, OSCILLATOR_COUNT, OscillatorParams};
 
 pub const TARGET_COUNT: usize = 53;
 pub const GLOBAL_COUNT: usize = 12;
-pub const SOURCE_COUNT: usize = 5;
+pub const SOURCE_COUNT: usize = 6;
 pub const GLOBAL_DEFAULTS: [f32; GLOBAL_COUNT] = [
     0.01, 0.2, 0.7, 0.4, 1.0, 0.0, 18000.0, 0.1, 0.01, 0.2, 0.7, 0.4,
 ];
@@ -93,6 +93,9 @@ pub struct VoiceParams {
     pub pitch_bend: f32,
     /// Pitch-bend range in semitones, 0..=24. Default 2.
     pub pitch_bend_range: f32,
+    /// Channel modulation wheel, 0..=1. Unipolar matrix source 5; live updates
+    /// do not retrigger or change velocity/key tracking.
+    pub mod_wheel: f32,
     /// White noise mixed into the filter, 0..=1. Independent of oscillator levels.
     pub noise: f32,
     /// Hard-sync each oscillator to oscillator 0's first unison wrap. Index 0 is ignored.
@@ -104,7 +107,7 @@ pub struct VoiceParams {
     pub ring: [f32; OSCILLATOR_COUNT],
     /// Unison stereo spread around each oscillator pan, 0..=1.
     pub spread: [f32; OSCILLATOR_COUNT],
-    /// [source: AMP ENV=0 / LFO=1 / MOD ENV=2 / Velocity=3 / KeyTrack=4][destination].
+    /// [source: AMP ENV=0 / LFO=1 / MOD ENV=2 / Velocity=3 / KeyTrack=4 / ModWheel=5][destination].
     /// Zero removes a route. Key tracking is centered on MIDI 60, at 60 semitones
     /// per unit; depths use normalized target travel, not exact cutoff tracking.
     pub routes: [[f32; TARGET_COUNT]; SOURCE_COUNT],
@@ -127,6 +130,7 @@ impl Default for VoiceParams {
             sustain: false,
             pitch_bend: 0.0,
             pitch_bend_range: 2.0,
+            mod_wheel: 0.0,
             noise: 0.0,
             sync: [false; OSCILLATOR_COUNT],
             fm: [0.0; OSCILLATOR_COUNT],
@@ -175,6 +179,9 @@ impl VoiceParams {
         }
         if !self.pitch_bend_range.is_finite() || !(0.0..=24.0).contains(&self.pitch_bend_range) {
             return Err(Error::InvalidParameter("pitch bend range"));
+        }
+        if !self.mod_wheel.is_finite() || !(0.0..=1.0).contains(&self.mod_wheel) {
+            return Err(Error::InvalidParameter("mod wheel"));
         }
         Ok(())
     }
@@ -227,6 +234,8 @@ pub struct Telemetry {
     pub velocity: f32,
     /// MIDI note relative to 60, divided by 60 and clamped to [-1, 1].
     pub key_track: f32,
+    /// Channel modulation wheel, 0..=1; independent of velocity and key tracking.
+    pub mod_wheel: f32,
     pub effective: [f32; TARGET_COUNT],
 }
 
@@ -238,6 +247,7 @@ impl Default for Telemetry {
             mod_env: 0.0,
             velocity: 0.0,
             key_track: 0.0,
+            mod_wheel: 0.0,
             effective: VoiceParams::default().normalized(),
         }
     }

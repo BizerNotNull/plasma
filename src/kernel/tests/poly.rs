@@ -655,3 +655,39 @@ fn enabling_legato_with_only_pedaled_voices_keeps_one() {
     assert_eq!(poly.active_voice_count(), 1);
     assert!((poly.telemetry().key_track - 7.0 / 60.0).abs() < 1e-5);
 }
+
+#[test]
+fn channel_mod_wheel_is_shared_and_does_not_drop_notes() {
+    let mut poly = synth(58);
+    let mut params = VoiceParams::default();
+    params.globals[..8].copy_from_slice(&[0.001, 0.001, 1.0, 0.01, 1.0, 0.0, 18000.0, 0.1]);
+    params.routes[5][0] = 1.0;
+    poly.set_params(params).unwrap();
+    for note in [60_u8, 64, 67] {
+        poly.note_on(note, 127).unwrap();
+    }
+    advance(&mut poly, 200);
+    assert_eq!(poly.active_voice_count(), 3);
+    assert_eq!(poly.telemetry().mod_wheel, 0.0);
+    let mut before = [[0.0; 2]; 128];
+    poly.render(&mut before);
+    params.mod_wheel = 1.0;
+    poly.set_params(params).unwrap();
+    assert_eq!(poly.active_voice_count(), 3);
+    assert_eq!(poly.telemetry().mod_wheel, 1.0);
+    let mut after = [[0.0; 2]; 128];
+    poly.render(&mut after);
+    assert_ne!(before, after);
+    assert!(after.iter().flatten().all(|s| s.is_finite()));
+    poly.all_notes_off();
+    advance(&mut poly, 2000);
+    assert_eq!(poly.active_voice_count(), 0);
+    assert_eq!(poly.telemetry().mod_wheel, 1.0);
+    let expected = (params.normalized()[0] + params.routes[5][0] * params.mod_wheel).clamp(0.0, 1.0);
+    assert!((poly.telemetry().effective[0] - expected).abs() < 1e-6);
+    params.routes[5][52] = 1.0;
+    poly.set_params(params).unwrap();
+    let expected_end = (params.normalized()[52] + params.mod_wheel).clamp(0.0, 1.0);
+    assert!((poly.telemetry().effective[52] - expected_end).abs() < 1e-6);
+    assert_eq!(poly.active_voice_count(), 0);
+}

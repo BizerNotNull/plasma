@@ -10,7 +10,7 @@ pub(crate) struct Controls {
 }
 
 const WORDS: usize =
-    OSCILLATOR_COUNT * 10 + 10 + 4 * OSCILLATOR_COUNT + GLOBAL_COUNT + SOURCE_COUNT * TARGET_COUNT;
+    OSCILLATOR_COUNT * 10 + 11 + 4 * OSCILLATOR_COUNT + GLOBAL_COUNT + SOURCE_COUNT * TARGET_COUNT;
 
 pub(crate) struct Published {
     version: AtomicU64,
@@ -70,6 +70,8 @@ impl Published {
         words[n] = (c.params.pitch_bend as f64).to_bits();
         n += 1;
         words[n] = (c.params.pitch_bend_range as f64).to_bits();
+        n += 1;
+        words[n] = (c.params.mod_wheel as f64).to_bits();
         n += 1;
         words[n] = (c.params.noise as f64).to_bits();
         n += 1;
@@ -163,6 +165,8 @@ impl Published {
         n += 1;
         c.params.pitch_bend_range = f64::from_bits(words[n]) as f32;
         n += 1;
+        c.params.mod_wheel = f64::from_bits(words[n]) as f32;
+        n += 1;
         c.params.noise = f64::from_bits(words[n]) as f32;
         n += 1;
         for s in &mut c.params.sync {
@@ -210,6 +214,7 @@ impl Meters {
         self.values[2].store(t.mod_env.to_bits(), Ordering::Relaxed);
         self.values[3].store(t.velocity.to_bits(), Ordering::Relaxed);
         self.values[4].store(t.key_track.to_bits(), Ordering::Relaxed);
+        self.values[5].store(t.mod_wheel.to_bits(), Ordering::Relaxed);
         for (dst, v) in self.values[SOURCE_COUNT..].iter().zip(t.effective) {
             dst.store(v.to_bits(), Ordering::Relaxed);
         }
@@ -222,6 +227,7 @@ impl Meters {
             mod_env: f32::from_bits(self.values[2].load(Ordering::Relaxed)),
             velocity: f32::from_bits(self.values[3].load(Ordering::Relaxed)),
             key_track: f32::from_bits(self.values[4].load(Ordering::Relaxed)),
+            mod_wheel: f32::from_bits(self.values[5].load(Ordering::Relaxed)),
             effective: std::array::from_fn(|i| {
                 f32::from_bits(self.values[i + SOURCE_COUNT].load(Ordering::Relaxed))
             }),

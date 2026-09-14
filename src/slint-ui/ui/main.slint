@@ -219,18 +219,21 @@ export component MainWindow inherits Window {
     in property <bool> sustain: false;
     in property <float> pitch-bend: 0;
     in property <float> pitch-bend-range: 2;
+    in property <float> mod-wheel: 0;
     in property <float> noise: 0;
     in property <[float]> env-depths <=> Modulation.env-depths;
     in property <[float]> lfo-depths <=> Modulation.lfo-depths;
     in property <[float]> mod-env-depths <=> Modulation.mod-env-depths;
     in property <[float]> velocity-depths <=> Modulation.velocity-depths;
     in property <[float]> key-track-depths <=> Modulation.key-track-depths;
+    in property <[float]> mod-wheel-depths <=> Modulation.mod-wheel-depths;
     in property <[float]> effective-values <=> Modulation.effective-values;
     in property <float> env-value;
     in property <float> lfo-value;
     in property <float> mod-env-value;
     in property <float> velocity-value;
     in property <float> key-track-value;
+    in property <float> mod-wheel-value;
     callback parameter-edited(int, int, float);
     callback volume-edited(float);
     callback audition(int);
@@ -245,6 +248,7 @@ export component MainWindow inherits Window {
     callback noise-edited(float);
     callback pitch-bend-edited(float);
     callback pitch-bend-range-edited(float);
+    callback mod-wheel-edited(float);
     private property <[string]> destinations: ["OSC 1 · Semitone", "OSC 1 · Fine", "OSC 1 · Phase", "OSC 1 · Phase random", "OSC 1 · Pulse width", "OSC 1 · Unison", "OSC 1 · Detune", "OSC 1 · Pan", "OSC 1 · Level", "OSC 2 · Semitone", "OSC 2 · Fine", "OSC 2 · Phase", "OSC 2 · Phase random", "OSC 2 · Pulse width", "OSC 2 · Unison", "OSC 2 · Detune", "OSC 2 · Pan", "OSC 2 · Level", "OSC 3 · Semitone", "OSC 3 · Fine", "OSC 3 · Phase", "OSC 3 · Phase random", "OSC 3 · Pulse width", "OSC 3 · Unison", "OSC 3 · Detune", "OSC 3 · Pan", "OSC 3 · Level", "Master · Volume", "AMP ENV · Attack", "AMP ENV · Decay", "AMP ENV · Sustain", "AMP ENV · Release", "LFO · Rate", "LFO · Phase", "Filter · Cutoff", "Filter · Resonance", "MOD ENV · Attack", "MOD ENV · Decay", "MOD ENV · Sustain", "MOD ENV · Release", "Noise", "OSC 1 · Spread", "OSC 2 · Spread", "OSC 3 · Spread", "OSC 2 · FM", "OSC 3 · FM", "OSC 2 · Ring", "OSC 3 · Ring", "Glide", "OSC 1 · FM", "OSC 1 · Ring", "OSC 2 · Sync", "OSC 3 · Sync"];
 
     VerticalLayout {
@@ -316,6 +320,10 @@ export component MainWindow inherits Window {
                                 spacing: 4px;
                                 Knob { label: "BEND RANGE"; unit: " st"; maximum: 24; default-value: 2; value: root.pitch-bend-range; edited(v) => { root.pitch-bend-range-edited(v); } }
                                 Knob { label: "PITCH BEND"; unit: "%"; minimum: -100; maximum: 100; value: root.pitch-bend * 100; edited(v) => { root.pitch-bend-edited(v / 100); } }
+                            }
+                            HorizontalLayout {
+                                spacing: 4px;
+                                Knob { label: "MOD WHEEL"; unit: "%"; value: root.mod-wheel * 100; edited(v) => { root.mod-wheel-edited(v / 100); } }
                             }
                             Text { text: "OSC MIX + NOISE → FILTER → AMP\nAMP ENV shapes amplitude.\nMOD ENV is freely assignable."; color: #90a2ae; font-size: 10px; wrap: word-wrap; }
                         }
@@ -405,11 +413,13 @@ export component MainWindow inherits Window {
                         Rectangle { x: (parent.width - 1px) / 2; width: 1px; height: parent.height; background: #70618b; }
                         Rectangle { x: (parent.width - self.width) * (clamp(root.key-track-value, -1, 1) + 1) / 2; width: 4px; height: parent.height; background: #b5a0ff; }
                     }
+                    Action { text: "MOD WHEEL / ASSIGN"; min-width: 148px; accent: #ff9a62; selected: Modulation.selected-source == 5; activated => { Modulation.selected-source = 5; } }
+                    Rectangle { width: 56px; height: 8px; background: #2a1e18; Rectangle { width: parent.width * clamp(root.mod-wheel-value, 0, 1); height: parent.height; background: #ff9a62; } }
                     ComboBox { width: 168px; model: root.destinations; current-index: Modulation.selected-target; selected(value) => { Modulation.selected-target = self.current-index; } }
-                    for name[source] in ["AMP", "LFO", "MOD", "VEL", "KEY"]: HorizontalLayout {
+                    for name[source] in ["AMP", "LFO", "MOD", "VEL", "KEY", "WHL"]: HorizontalLayout {
                         spacing: 3px;
-                        Action { text: name; min-width: 36px; accent: source == 0 ? #53e2b4 : source == 1 ? #659fff : source == 2 ? #e6b66b : source == 3 ? #e58dbe : #b5a0ff; selected: Modulation.selected-source == source; activated => { Modulation.selected-source = source; } }
-                        DepthSlider { width: 72px; value: root.depth(source); label: name + " modulation depth"; accent: source == 0 ? #53e2b4 : source == 1 ? #659fff : source == 2 ? #e6b66b : source == 3 ? #e58dbe : #b5a0ff; edited(v) => { Modulation.routed(Modulation.selected-target, source, v); } }
+                        Action { text: name; min-width: 36px; accent: source == 0 ? #53e2b4 : source == 1 ? #659fff : source == 2 ? #e6b66b : source == 3 ? #e58dbe : source == 4 ? #b5a0ff : #ff9a62; selected: Modulation.selected-source == source; activated => { Modulation.selected-source = source; } }
+                        DepthSlider { width: 72px; value: root.depth(source); label: name + " modulation depth"; accent: source == 0 ? #53e2b4 : source == 1 ? #659fff : source == 2 ? #e6b66b : source == 3 ? #e58dbe : source == 4 ? #b5a0ff : #ff9a62; edited(v) => { Modulation.routed(Modulation.selected-target, source, v); } }
                     }
                 }
                 HorizontalLayout {
@@ -423,7 +433,7 @@ export component MainWindow inherits Window {
                         value <=> root.velocity;
                         accessible-label: "Audition velocity";
                     }
-                    Text { text: "Vel=/127 · Key=(note-60)/60 at MIDI 60 · depth=normalized travel · Drag ↑↓ knobs"; color: #8294a0; font-size: 9px; horizontal-alignment: right; vertical-alignment: center; wrap: word-wrap; }
+                    Text { text: "Vel=/127 · Key=(note-60)/60 at MIDI 60 · Whl=0..1 · depth=normalized travel · Drag ↑↓ knobs"; color: #8294a0; font-size: 9px; horizontal-alignment: right; vertical-alignment: center; wrap: word-wrap; }
                 }
                 Rectangle {
                     height: 49px;
@@ -447,5 +457,5 @@ export component MainWindow inherits Window {
             }
         }
     }
-    function depth(source: int) -> float { return source == 0 ? root.env-depths[Modulation.selected-target] : source == 1 ? root.lfo-depths[Modulation.selected-target] : source == 2 ? root.mod-env-depths[Modulation.selected-target] : source == 3 ? root.velocity-depths[Modulation.selected-target] : root.key-track-depths[Modulation.selected-target]; }
+    function depth(source: int) -> float { return source == 0 ? root.env-depths[Modulation.selected-target] : source == 1 ? root.lfo-depths[Modulation.selected-target] : source == 2 ? root.mod-env-depths[Modulation.selected-target] : source == 3 ? root.velocity-depths[Modulation.selected-target] : source == 4 ? root.key-track-depths[Modulation.selected-target] : root.mod-wheel-depths[Modulation.selected-target]; }
 }

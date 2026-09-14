@@ -1041,3 +1041,87 @@ fn oscillator_sync_is_a_modulation_target_without_changing_bases() {
     assert_eq!(below.telemetry().effective[51], 0.0);
     assert!(!below.params().sync[1]);
 }
+
+#[test]
+fn default_mod_wheel_is_zero() {
+    assert_eq!(VoiceParams::default().mod_wheel, 0.0);
+}
+
+#[test]
+fn mod_wheel_is_a_unipolar_source_without_changing_bases() {
+    let mut params = VoiceParams::default();
+    params.oscillators[0].level = 0.0;
+    params.globals[..4].copy_from_slice(&[0.001, 0.001, 1.0, 0.2]);
+    params.globals[6] = 18000.0;
+    let mut dry = Voice::new(48_000.0, 11).unwrap();
+    let mut wet = Voice::new(48_000.0, 11).unwrap();
+    dry.set_params(params).unwrap();
+    params.mod_wheel = 1.0;
+    params.routes[5][40] = 1.0;
+    wet.set_params(params).unwrap();
+    dry.note_on(220.0, 127).unwrap();
+    wet.note_on(220.0, 127).unwrap();
+    let mut dry_energy = 0.0;
+    let mut wet_energy = 0.0;
+    for _ in 0..4800 {
+        let a = dry.next_frame();
+        let b = wet.next_frame();
+        assert!(b.iter().all(|s| s.is_finite() && s.abs() <= 1.0));
+        dry_energy += (a[0] as f64).powi(2);
+        wet_energy += (b[0] as f64).powi(2);
+    }
+    assert!(dry_energy < 1e-12);
+    assert!(wet_energy > 0.01);
+    assert_eq!(wet.params().noise, 0.0);
+    assert_eq!(wet.telemetry().mod_wheel, 1.0);
+    assert!((wet.telemetry().effective[40] - 1.0).abs() < 1e-6);
+    assert_eq!(wet.telemetry().velocity, 1.0);
+    assert!((wet.telemetry().key_track + 3.0 / 60.0).abs() < 1e-5);
+}
+
+#[test]
+fn live_mod_wheel_updates_without_retriggering() {
+    let mut voice = Voice::new(48_000.0, 11).unwrap();
+    let mut params = VoiceParams::default();
+    params.globals[..4].copy_from_slice(&[0.001, 0.001, 1.0, 0.2]);
+    params.routes[5][0] = 1.0;
+    voice.set_params(params).unwrap();
+    voice.note_on(440.0, 64).unwrap();
+    for _ in 0..2000 {
+        voice.next_frame();
+    }
+    let env = voice.telemetry().env;
+    let velocity = voice.telemetry().velocity;
+    let key = voice.telemetry().key_track;
+    let mut before = [[0.0; 2]; 128];
+    voice.render(&mut before);
+    params.mod_wheel = 1.0;
+    voice.set_params(params).unwrap();
+    assert_eq!(voice.telemetry().mod_wheel, 1.0);
+    assert_eq!(voice.telemetry().env, env);
+    assert_eq!(voice.telemetry().velocity, velocity);
+    assert_eq!(voice.telemetry().key_track, key);
+    let mut after = [[0.0; 2]; 128];
+    voice.render(&mut after);
+    assert_ne!(before, after);
+    assert!(after.iter().all(|f| f.iter().all(|s| s.is_finite())));
+    assert!((voice.telemetry().env - env).abs() < 0.02);
+    assert_eq!(voice.telemetry().velocity, velocity);
+    assert_eq!(voice.telemetry().key_track, key);
+}
+
+#[test]
+fn invalid_mod_wheel_is_rejected_atomically() {
+    let mut voice = Voice::new(48_000.0, 9).unwrap();
+    let mut params = VoiceParams::default();
+    params.mod_wheel = 0.5;
+    voice.set_params(params).unwrap();
+    params.mod_wheel = 1.1;
+    assert!(voice.set_params(params).is_err());
+    params.mod_wheel = -0.1;
+    assert!(voice.set_params(params).is_err());
+    params.mod_wheel = f32::NAN;
+    assert!(voice.set_params(params).is_err());
+    assert_eq!(voice.params().mod_wheel, 0.5);
+    assert_eq!(voice.telemetry().mod_wheel, 0.5);
+}

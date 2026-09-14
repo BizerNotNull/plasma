@@ -695,3 +695,43 @@ fn set_sustain_round_trips_and_holds_rendered_notes() {
     renderer.render(&mut [[0.0; 2]; 4096]);
     assert_eq!(renderer.active_voice_count(), 0);
 }
+
+#[test]
+fn set_mod_wheel_round_trips_and_changes_rendered_audio() {
+    let synth = Synth::new();
+    assert_eq!(synth.voice_params().unwrap().mod_wheel, 0.0);
+    synth.set_mod_wheel(0.75).unwrap();
+    assert_eq!(synth.voice_params().unwrap().mod_wheel, 0.75);
+    assert!(synth.set_mod_wheel(1.1).is_err());
+    assert!(synth.set_mod_wheel(-0.1).is_err());
+    assert!(synth.set_mod_wheel(f32::NAN).is_err());
+    assert_eq!(synth.voice_params().unwrap().mod_wheel, 0.75);
+    assert!(synth.set_route(40, 5, 1.0).is_ok());
+    assert!(synth.set_route(40, 6, 1.0).is_err());
+
+    let dry = Synth::new();
+    let wet = Synth::new();
+    let mute = OscillatorParams {
+        level: 0.0,
+        ..Default::default()
+    };
+    dry.set_params(0, mute).unwrap();
+    wet.set_params(0, mute).unwrap();
+    wet.set_mod_wheel(1.0).unwrap();
+    wet.set_route(40, 5, 1.0).unwrap();
+    assert_eq!(wet.voice_params().unwrap().noise, 0.0);
+    assert_eq!(wet.voice_params().unwrap().routes[5][40], 1.0);
+
+    dry.note_on(60, 127).unwrap();
+    wet.note_on(60, 127).unwrap();
+    let mut dry_r = AudioRenderer::new(dry, 48_000.0, 5).unwrap();
+    let mut wet_r = AudioRenderer::new(wet.clone(), 48_000.0, 5).unwrap();
+    let mut a = [0.0_f32; 4096];
+    let mut b = [0.0_f32; 4096];
+    dry_r.render_interleaved(&mut a, 2);
+    wet_r.render_interleaved(&mut b, 2);
+    assert_ne!(a, b);
+    assert!(b.iter().all(|s| s.is_finite()));
+    assert!(b.iter().any(|s| *s != 0.0));
+    assert!((wet.telemetry().mod_wheel - 1.0).abs() < 1e-6);
+}

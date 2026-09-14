@@ -4,13 +4,14 @@ export global Modulation {
     in property <[float]> mod-env-depths;
     in property <[float]> velocity-depths;
     in property <[float]> key-track-depths;
+    in property <[float]> mod-wheel-depths;
     in property <[float]> effective-values;
     in-out property <int> selected-source: 0;
     in-out property <int> selected-target: 34;
     callback routed(int, int, float);
     public function attach(target: int) {
         self.selected-target = target;
-        let depth = self.selected-source == 0 ? self.env-depths[target] : self.selected-source == 1 ? self.lfo-depths[target] : self.selected-source == 2 ? self.mod-env-depths[target] : self.selected-source == 3 ? self.velocity-depths[target] : self.key-track-depths[target];
+        let depth = self.selected-source == 0 ? self.env-depths[target] : self.selected-source == 1 ? self.lfo-depths[target] : self.selected-source == 2 ? self.mod-env-depths[target] : self.selected-source == 3 ? self.velocity-depths[target] : self.selected-source == 4 ? self.key-track-depths[target] : self.mod-wheel-depths[target];
         if depth == 0 { self.routed(target, self.selected-source, 0.25); }
     }
 }
@@ -32,6 +33,7 @@ export component Knob inherits Rectangle {
     private property <float> mod-env-depth: root.target >= 0 ? Modulation.mod-env-depths[root.target] : 0;
     private property <float> velocity-depth: root.target >= 0 ? Modulation.velocity-depths[root.target] : 0;
     private property <float> key-track-depth: root.target >= 0 ? Modulation.key-track-depths[root.target] : 0;
+    private property <float> mod-wheel-depth: root.target >= 0 ? Modulation.mod-wheel-depths[root.target] : 0;
     private property <float> effective: root.target >= 0 ? Modulation.effective-values[root.target] : root.normalized;
     private property <float> drag-start-value;
     private property <float> drag-start-y;
@@ -116,6 +118,13 @@ export component Knob inherits Rectangle {
             visible: root.key-track-depth != 0 && index / 24 >= clamp(root.normalized - abs(root.key-track-depth), 0, 1) && index / 24 <= clamp(root.normalized + abs(root.key-track-depth), 0, 1);
             background: #b5a0ff;
         }
+        for tick[index] in (root.mod-wheel-depth != 0 ? 25 : 0): Rectangle {
+            x: 21px + cos(135deg + index * 270deg / 24) * 36px - 1px;
+            y: 21px + sin(135deg + index * 270deg / 24) * 36px - 1px;
+            width: 2px; height: 2px;
+            visible: root.mod-wheel-depth != 0 && index / 24 >= clamp(min(root.normalized, root.normalized + root.mod-wheel-depth), 0, 1) && index / 24 <= clamp(max(root.normalized, root.normalized + root.mod-wheel-depth), 0, 1);
+            background: #ff9a62;
+        }
         Rectangle {
             x: 6px; y: 6px; width: 30px; height: 30px; border-radius: 15px;
             background: @linear-gradient(145deg, #444c53, #242a30); border-width: 1px; border-color: #53606b;
@@ -129,7 +138,7 @@ export component Knob inherits Rectangle {
             x: 20px + cos(135deg + root.effective * 270deg) * 20px - 2px;
             y: 20px + sin(135deg + root.effective * 270deg) * 20px - 2px;
             width: 4px; height: 4px; border-radius: 2px; background: #ffffff;
-            visible: root.env-depth != 0 || root.lfo-depth != 0 || root.mod-env-depth != 0 || root.velocity-depth != 0 || root.key-track-depth != 0;
+            visible: root.env-depth != 0 || root.lfo-depth != 0 || root.mod-env-depth != 0 || root.velocity-depth != 0 || root.key-track-depth != 0 || root.mod-wheel-depth != 0;
         }
     }
     Text {
@@ -143,11 +152,12 @@ export component Knob inherits Rectangle {
         HorizontalLayout {
             padding-left: 4px; padding-right: 4px;
             Text { text: root.env-depth != 0 ? "A" : "·"; color: #53e2b4; font-size: 9px; }
-            Text { text: Modulation.selected-source == 0 ? "+A" : Modulation.selected-source == 1 ? "+L" : Modulation.selected-source == 2 ? "+M" : Modulation.selected-source == 3 ? "+V" : "+K"; color: Modulation.selected-source == 0 ? #53e2b4 : Modulation.selected-source == 1 ? #659fff : Modulation.selected-source == 2 ? #e6b66b : Modulation.selected-source == 3 ? #e58dbe : #b5a0ff; font-size: 9px; horizontal-alignment: center; }
+            Text { text: Modulation.selected-source == 0 ? "+A" : Modulation.selected-source == 1 ? "+L" : Modulation.selected-source == 2 ? "+M" : Modulation.selected-source == 3 ? "+V" : Modulation.selected-source == 4 ? "+K" : "+W"; color: Modulation.selected-source == 0 ? #53e2b4 : Modulation.selected-source == 1 ? #659fff : Modulation.selected-source == 2 ? #e6b66b : Modulation.selected-source == 3 ? #e58dbe : Modulation.selected-source == 4 ? #b5a0ff : #ff9a62; font-size: 9px; horizontal-alignment: center; }
             Text { text: root.lfo-depth != 0 ? "L" : "·"; color: #659fff; font-size: 9px; }
             Text { text: root.mod-env-depth != 0 ? "M" : "·"; color: #e6b66b; font-size: 9px; }
             Text { text: root.velocity-depth != 0 ? "V" : "·"; color: #e58dbe; font-size: 9px; }
             Text { text: root.key-track-depth != 0 ? "K" : "·"; color: #b5a0ff; font-size: 9px; }
+            Text { text: root.mod-wheel-depth != 0 ? "W" : "·"; color: #ff9a62; font-size: 9px; }
         }
         assign := TouchArea { mouse-cursor: pointer; clicked => { Modulation.attach(root.target); } }
         accessible-role: button;

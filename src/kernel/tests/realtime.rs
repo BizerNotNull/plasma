@@ -57,6 +57,7 @@ fn realtime_render_and_control_transitions_do_not_allocate() {
         [0.015; TARGET_COUNT],
         [0.02; TARGET_COUNT],
         [-0.025; TARGET_COUNT],
+        [0.01; TARGET_COUNT],
     ];
     params.globals[3] = 0.001;
     for osc in &mut params.oscillators {
@@ -103,6 +104,7 @@ fn polyphonic_events_stealing_and_rendering_do_not_allocate() {
         [0.015; TARGET_COUNT],
         [0.02; TARGET_COUNT],
         [-0.025; TARGET_COUNT],
+        [0.01; TARGET_COUNT],
     ];
     params.globals[3] = 0.001;
     for osc in &mut params.oscillators {

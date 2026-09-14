@@ -1,6 +1,7 @@
 //! Monophonic voice with a 1 kHz modulation control clock. Source-control routes
 //! use the previous control tick's AMP ENV/LFO/MOD ENV outputs, preventing loops.
 //! Velocity and key tracking are per-note constants, retained through release.
+//! Channel mod wheel is a live unipolar source, independent of those note sources.
 //! Base parameters are never overwritten by modulation. Oscillator phase/random
 //! are sampled at the next trigger; unison modulation rounds to whole voices.
 //! White noise is mixed with the oscillator bank before the filter. Unison stereo
@@ -86,6 +87,7 @@ impl Voice {
         params.validate()?;
         if params != self.params {
             self.base = params.normalized();
+            self.telemetry.mod_wheel = params.mod_wheel;
             self.params = params;
             self.clock = 0;
         }
@@ -163,13 +165,15 @@ impl Voice {
 
     fn control_tick(&mut self) {
         self.advance_glide();
+        self.telemetry.mod_wheel = self.params.mod_wheel;
         for i in 0..TARGET_COUNT {
             self.telemetry.effective[i] = (self.base[i]
                 + self.params.routes[0][i] * self.telemetry.env
                 + self.params.routes[1][i] * self.telemetry.lfo
                 + self.params.routes[2][i] * self.telemetry.mod_env
                 + self.params.routes[3][i] * self.telemetry.velocity
-                + self.params.routes[4][i] * self.telemetry.key_track)
+                + self.params.routes[4][i] * self.telemetry.key_track
+                + self.params.routes[5][i] * self.telemetry.mod_wheel)
                 .clamp(0.0, 1.0);
         }
         for i in 0..OSCILLATOR_COUNT {
