@@ -1,6 +1,6 @@
 //! Fixed-capacity MIDI voice allocation and post-voice mixing.
 
-use crate::{Error, Telemetry, Voice, VoiceParams, check_sample_rate};
+use crate::{Error, TARGET_COUNT, Telemetry, Voice, VoiceParams, check_sample_rate};
 
 pub const POLYPHONY: usize = 8;
 
@@ -39,6 +39,7 @@ struct Slot {
 /// sustain note-offs every unheld slot; all-notes-off still releases immediately.
 /// Channel mod wheel is a unipolar matrix source shared by every slot; moving it
 /// does not retrigger, steal, or change velocity/key tracking.
+/// Channel aftertouch is a unipolar matrix source shared by every slot the same way.
 /// Always-glide slides newly allocated slots from the last triggered pitch
 /// even after silence, without requiring legato or skipping retrigger.
 ///
@@ -104,11 +105,15 @@ impl PolySynth {
             slot.voice.set_params(params)?;
         }
         let mut effective = params.normalized();
-        for (value, depth) in effective.iter_mut().zip(params.routes[5]) {
-            *value = (*value + depth * params.mod_wheel).clamp(0.0, 1.0);
+        for i in 0..TARGET_COUNT {
+            effective[i] = (effective[i]
+                + params.routes[5][i] * params.mod_wheel
+                + params.routes[6][i] * params.aftertouch)
+                .clamp(0.0, 1.0);
         }
         self.idle_telemetry.effective = effective;
         self.idle_telemetry.mod_wheel = params.mod_wheel;
+        self.idle_telemetry.aftertouch = params.aftertouch;
         let was_legato = self.params.legato;
         let was_sustain = self.params.sustain;
         self.params = params;
@@ -283,8 +288,8 @@ impl PolySynth {
     }
 
     /// Reports the most recently triggered active slot, including release tails.
-    /// With no active slots, note sources are zero, channel mod wheel is the live
-    /// parameter, and effective values are the base snapshot plus the wheel mix.
+    /// With no active slots, note sources are zero, channel mod wheel and aftertouch
+    /// are the live parameters, and effective values are the base snapshot plus those mixes.
     /// Other modulation belongs to each voice, not to this display selection.
     pub fn telemetry(&self) -> Telemetry {
         self.slots

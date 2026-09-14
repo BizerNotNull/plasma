@@ -50,6 +50,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let velocity_depths = Rc::new(VecModel::from(params.routes[3].to_vec()));
     let key_track_depths = Rc::new(VecModel::from(params.routes[4].to_vec()));
     let mod_wheel_depths = Rc::new(VecModel::from(params.routes[5].to_vec()));
+    let aftertouch_depths = Rc::new(VecModel::from(params.routes[6].to_vec()));
     let effective = Rc::new(VecModel::from(params.normalized().to_vec()));
     window.set_globals(globals.clone().into());
     window.set_env_depths(env_depths.clone().into());
@@ -58,6 +59,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     window.set_velocity_depths(velocity_depths.clone().into());
     window.set_key_track_depths(key_track_depths.clone().into());
     window.set_mod_wheel_depths(mod_wheel_depths.clone().into());
+    window.set_aftertouch_depths(aftertouch_depths.clone().into());
     window.set_effective_values(effective.clone().into());
     window.set_lfo_wave(0);
     window.set_lfo_retrigger(params.lfo_retrigger);
@@ -69,6 +71,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     window.set_pitch_bend(params.pitch_bend);
     window.set_pitch_bend_range(params.pitch_bend_range);
     window.set_mod_wheel(params.mod_wheel);
+    window.set_aftertouch(params.aftertouch);
     window.set_noise(params.noise * 100.0);
     window.on_global_edited({
         let weak = window.as_weak();
@@ -119,6 +122,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     if mod_wheel_depths.row_data(i) != Some(params.routes[5][i]) {
                         mod_wheel_depths.set_row_data(i, params.routes[5][i]);
+                    }
+                    if aftertouch_depths.row_data(i) != Some(params.routes[6][i]) {
+                        aftertouch_depths.set_row_data(i, params.routes[6][i]);
                     }
                 }
             }
@@ -239,6 +245,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     });
+    window.on_aftertouch_edited({
+        let weak = window.as_weak();
+        let synth = synth.clone();
+        move |amount| {
+            let Some(window) = weak.upgrade() else { return };
+            if show_result(&window, synth.set_aftertouch(amount)) {
+                window.set_aftertouch(amount);
+            }
+        }
+    });
     window.on_noise_edited({
         let weak = window.as_weak();
         let synth = synth.clone();
@@ -257,6 +273,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         window.set_velocity_value(previous.velocity);
         window.set_key_track_value(previous.key_track);
         window.set_mod_wheel_value(previous.mod_wheel);
+        window.set_aftertouch_value(previous.aftertouch);
         move || {
             let Some(window) = weak.upgrade() else { return };
             let telemetry = synth.telemetry();
@@ -277,6 +294,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             if telemetry.mod_wheel != previous.mod_wheel {
                 window.set_mod_wheel_value(telemetry.mod_wheel);
+            }
+            if telemetry.aftertouch != previous.aftertouch {
+                window.set_aftertouch_value(telemetry.aftertouch);
             }
             for (i, value) in telemetry.effective.into_iter().enumerate() {
                 if value != previous.effective[i] {

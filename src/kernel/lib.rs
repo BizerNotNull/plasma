@@ -41,19 +41,18 @@
 //! (threshold 0.5; boolean bases stay unchanged). Glide is sampled into an in-progress slide
 //! at the overlapping legato trigger or, with always-glide, at any retrigger from the previous
 //! pitch; a modulated zero snaps the remainder.
-//! AMP ENV, LFO, MOD ENV, velocity, key tracking and channel mod wheel may route
-//! to every target with signed
+//! AMP ENV, LFO, MOD ENV, velocity, key tracking, channel mod wheel and channel
+//! aftertouch may route to every target with signed
 //! normalized depths. Only AMP ENV controls final amplitude and voice lifetime.
 //! Velocity is a per-note unipolar source; key tracking is centered on MIDI 60
-//! with 60 semitones per unit, clamped to [-1, 1]. Channel mod wheel is a live
-//! unipolar 0..=1 source, independent of velocity and key tracking.
+//! with 60 semitones per unit, clamped to [-1, 1]. Channel mod wheel and channel
+//! aftertouch are live unipolar 0..=1 sources, independent of velocity and key tracking.
 //! Route depths represent
 //! normalized target travel, not a percentage of exact cutoff tracking.
 //! Filter coefficients and master gain are smoothed over 3 ms; modulation runs at approximately
 //! 1 kHz, without recomputing unchanged oscillator coefficients.
-//!
 //! [`PolySynth`] supplies eight independent voices, MIDI note/velocity events,
-//! channel pitch bend, damper sustain, channel mod wheel, always-glide, selective release, last-note-priority legato, deterministic stealing and a bounded stereo mix.
+//! channel pitch bend, damper sustain, channel mod wheel, channel aftertouch, always-glide, selective release, last-note-priority legato, deterministic stealing and a bounded stereo mix.
 
 mod dsp;
 mod error;

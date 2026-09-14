@@ -154,6 +154,15 @@ impl Synth {
         })
     }
 
+    /// Channel aftertouch (channel pressure), 0..=1. Unipolar matrix source 6.
+    /// Live updates do not retrigger or change velocity/key tracking.
+    pub fn set_aftertouch(&self, amount: f32) -> Result<(), Error> {
+        self.update(|c| {
+            c.params.aftertouch = amount;
+            Ok(())
+        })
+    }
+
     /// White noise mixed into the filter, 0..=1. Independent of oscillator levels.
     pub fn set_noise(&self, amount: f32) -> Result<(), Error> {
         self.update(|c| {
@@ -209,12 +218,12 @@ impl Synth {
         })
     }
 
-    /// AMP ENV, LFO, MOD ENV, velocity, key tracking and mod wheel can address every target,
+    /// AMP ENV, LFO, MOD ENV, velocity, key tracking, mod wheel and aftertouch can address every target,
     /// including noise (40), spread (41..43), FM (44..45), ring (46..47), glide (48),
     /// oscillator 0 self-FM/ring (49..50) and oscillator 1/2 hard-sync (51..52, threshold 0.5).
     /// Source indices: 0 AMP ENV, 1 LFO, 2 MOD ENV, 3 velocity (0..1),
     /// 4 key tracking (MIDI 60 = 0, 60 semitones/unit, clamped to -1..1),
-    /// 5 channel mod wheel (0..1).
+    /// 5 channel mod wheel (0..1), 6 channel aftertouch (0..1).
     pub fn set_route(&self, target: usize, source: usize, depth: f32) -> Result<(), Error> {
         self.update(|c| {
             *c.params

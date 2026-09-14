@@ -693,6 +693,43 @@ fn channel_mod_wheel_is_shared_and_does_not_drop_notes() {
 }
 
 #[test]
+fn channel_aftertouch_is_shared_and_does_not_drop_notes() {
+    let mut poly = synth(58);
+    let mut params = VoiceParams::default();
+    params.globals[..8].copy_from_slice(&[0.001, 0.001, 1.0, 0.01, 1.0, 0.0, 18000.0, 0.1]);
+    params.routes[6][0] = 1.0;
+    poly.set_params(params).unwrap();
+    for note in [60_u8, 64, 67] {
+        poly.note_on(note, 127).unwrap();
+    }
+    advance(&mut poly, 200);
+    assert_eq!(poly.active_voice_count(), 3);
+    assert_eq!(poly.telemetry().aftertouch, 0.0);
+    let mut before = [[0.0; 2]; 128];
+    poly.render(&mut before);
+    params.aftertouch = 1.0;
+    poly.set_params(params).unwrap();
+    assert_eq!(poly.active_voice_count(), 3);
+    assert_eq!(poly.telemetry().aftertouch, 1.0);
+    let mut after = [[0.0; 2]; 128];
+    poly.render(&mut after);
+    assert_ne!(before, after);
+    assert!(after.iter().flatten().all(|s| s.is_finite()));
+    poly.all_notes_off();
+    advance(&mut poly, 2000);
+    assert_eq!(poly.active_voice_count(), 0);
+    assert_eq!(poly.telemetry().aftertouch, 1.0);
+    let expected =
+        (params.normalized()[0] + params.routes[6][0] * params.aftertouch).clamp(0.0, 1.0);
+    assert!((poly.telemetry().effective[0] - expected).abs() < 1e-6);
+    params.routes[6][52] = 1.0;
+    poly.set_params(params).unwrap();
+    let expected_end = (params.normalized()[52] + params.aftertouch).clamp(0.0, 1.0);
+    assert!((poly.telemetry().effective[52] - expected_end).abs() < 1e-6);
+    assert_eq!(poly.active_voice_count(), 0);
+}
+
+#[test]
 fn always_glide_slides_staccato_from_last_pitch() {
     let mut fingered = synth(59);
     let mut always = synth(59);
