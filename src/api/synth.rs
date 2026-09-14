@@ -130,6 +130,18 @@ impl Synth {
         })
     }
 
+    /// Ring modulation from oscillator 0. Amount is 0..=1.
+    /// Index 0 is stored but ignored. Independent of oscillator 0's audible level.
+    pub fn set_ring(&self, index: usize, amount: f32) -> Result<(), Error> {
+        self.update(|c| {
+            *c.params
+                .ring
+                .get_mut(index)
+                .ok_or(Error::InvalidOscillator)? = amount;
+            Ok(())
+        })
+    }
+
     /// AMP ENV, LFO, MOD ENV, velocity and key tracking can address every target.
     /// Source indices: 0 AMP ENV, 1 LFO, 2 MOD ENV, 3 velocity (0..1),
     /// 4 key tracking (MIDI 60 = 0, 60 semitones/unit, clamped to -1..1).

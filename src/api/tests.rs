@@ -327,3 +327,43 @@ fn oscillator_fm_round_trips_and_changes_rendered_audio() {
     assert_ne!(a, b);
     assert!(b.iter().all(|s| s.is_finite()));
 }
+
+#[test]
+fn oscillator_ring_round_trips_and_changes_rendered_audio() {
+    let free = Synth::new();
+    let ring = Synth::new();
+    let master = OscillatorParams {
+        waveform: Waveform::Sine,
+        level: 0.0,
+        ..Default::default()
+    };
+    let slave = OscillatorParams {
+        waveform: Waveform::Sine,
+        pitch: 19.0,
+        level: 1.0,
+        ..Default::default()
+    };
+    free.set_params(0, master).unwrap();
+    free.set_params(1, slave).unwrap();
+    ring.set_params(0, master).unwrap();
+    ring.set_params(1, slave).unwrap();
+    ring.set_ring(1, 0.8).unwrap();
+    assert_eq!(ring.voice_params().unwrap().ring[1], 0.8);
+    assert_eq!(free.voice_params().unwrap().ring[1], 0.0);
+    assert_eq!(ring.voice_params().unwrap().ring[0], 0.0);
+    assert!(ring.set_ring(3, 0.5).is_err());
+    assert!(ring.set_ring(1, -0.1).is_err());
+    assert!(ring.set_ring(1, 1.1).is_err());
+    assert_eq!(ring.voice_params().unwrap().ring[1], 0.8);
+
+    free.note_on(60, 127).unwrap();
+    ring.note_on(60, 127).unwrap();
+    let mut free_r = AudioRenderer::new(free, 48_000.0, 5).unwrap();
+    let mut ring_r = AudioRenderer::new(ring, 48_000.0, 5).unwrap();
+    let mut a = [0.0_f32; 4096];
+    let mut b = [0.0_f32; 4096];
+    free_r.render_interleaved(&mut a, 2);
+    ring_r.render_interleaved(&mut b, 2);
+    assert_ne!(a, b);
+    assert!(b.iter().all(|s| s.is_finite()));
+}

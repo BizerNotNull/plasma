@@ -459,3 +459,33 @@ fn oscillator_fm_from_silent_master_changes_audio() {
     }
     assert!(different);
 }
+
+#[test]
+fn oscillator_ring_from_silent_master_changes_audio() {
+    let mut free = Voice::new(48_000.0, 4).unwrap();
+    let mut ring = Voice::new(48_000.0, 4).unwrap();
+    let mut params = VoiceParams::default();
+    params.oscillators[0].waveform = Waveform::Sine;
+    params.oscillators[0].level = 0.0;
+    params.oscillators[1].waveform = Waveform::Sine;
+    params.oscillators[1].level = 1.0;
+    params.globals[6] = 18000.0;
+    free.set_params(params).unwrap();
+    params.ring[1] = 0.75;
+    ring.set_params(params).unwrap();
+    params.ring[1] = 1.1;
+    assert!(ring.set_params(params).is_err());
+    assert_eq!(ring.params().ring[1], 0.75);
+    free.note_on(220.0, 127).unwrap();
+    ring.note_on(220.0, 127).unwrap();
+    let mut different = false;
+    for _ in 0..2048 {
+        let a = free.next_frame();
+        let b = ring.next_frame();
+        assert!(b.iter().all(|s| s.is_finite() && s.abs() <= 1.0));
+        if a != b {
+            different = true;
+        }
+    }
+    assert!(different);
+}

@@ -88,6 +88,8 @@ pub struct VoiceParams {
     pub sync: [bool; OSCILLATOR_COUNT],
     /// Linear FM from oscillator 0, 0..=1 (index 0..=8). Index 0 is ignored.
     pub fm: [f32; OSCILLATOR_COUNT],
+    /// Ring modulation from oscillator 0, 0..=1. Index 0 is ignored.
+    pub ring: [f32; OSCILLATOR_COUNT],
     /// [source: AMP ENV=0 / LFO=1 / MOD ENV=2 / Velocity=3 / KeyTrack=4][destination].
     /// Zero removes a route. Key tracking is centered on MIDI 60, at 60 semitones
     /// per unit; depths use normalized target travel, not exact cutoff tracking.
@@ -110,6 +112,7 @@ impl Default for VoiceParams {
             legato: false,
             sync: [false; OSCILLATOR_COUNT],
             fm: [0.0; OSCILLATOR_COUNT],
+            ring: [0.0; OSCILLATOR_COUNT],
             routes: [[0.0; TARGET_COUNT]; SOURCE_COUNT],
         }
     }
@@ -135,6 +138,11 @@ impl VoiceParams {
         for amount in self.fm {
             if !amount.is_finite() || !(0.0..=1.0).contains(&amount) {
                 return Err(Error::InvalidParameter("fm"));
+            }
+        }
+        for amount in self.ring {
+            if !amount.is_finite() || !(0.0..=1.0).contains(&amount) {
+                return Err(Error::InvalidParameter("ring"));
             }
         }
         Ok(())

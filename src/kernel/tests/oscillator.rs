@@ -448,3 +448,184 @@ fn oscillator_two_takes_fm_from_oscillator_zero() {
     }
     assert!(different, "OSC 3 must accept FM from OSC 1");
 }
+
+fn ring_bank(modulator_level: f64, ring: f64) -> OscillatorBank {
+    let mut bank = OscillatorBank::new(48_000.0, 3).unwrap();
+    bank.set_params(
+        0,
+        OscillatorParams {
+            waveform: Waveform::Sine,
+            level: modulator_level,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    bank.set_params(
+        1,
+        OscillatorParams {
+            waveform: Waveform::Sine,
+            pitch: 12.0,
+            level: 1.0,
+            pan: -1.0,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    bank.set_params(
+        2,
+        OscillatorParams {
+            level: 0.0,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    bank.set_ring(1, ring).unwrap();
+    bank.note_on(110.0).unwrap();
+    bank
+}
+
+#[test]
+fn zero_ring_matches_unmodulated_audio() {
+    let mut free = ring_bank(1.0, 0.0);
+    let mut ignored = ring_bank(1.0, 0.0);
+    ignored.set_ring(0, 1.0).unwrap();
+    for _ in 0..1024 {
+        assert_eq!(free.next_frame(), ignored.next_frame());
+    }
+}
+
+#[test]
+fn ring_matches_analytical_product() {
+    let mut bank = ring_bank(0.0, 1.0);
+    let sr = 48_000.0;
+    let carrier_hz = 110.0 * 2.0_f64.powf(12.0 / 12.0);
+    for n in 0..2048 {
+        let modulator = (std::f64::consts::TAU * n as f64 * 110.0 / sr).sin();
+        let carrier = (std::f64::consts::TAU * n as f64 * carrier_hz / sr).sin();
+        let frame = bank.next_frame();
+        assert!((f64::from(frame[0]) - carrier * modulator).abs() < 1e-5);
+        assert_eq!(frame[1], 0.0);
+    }
+}
+
+#[test]
+fn silent_modulator_still_ring_modulates() {
+    let mut free = ring_bank(0.0, 0.0);
+    let mut ring = ring_bank(0.0, 1.0);
+    let mut different = false;
+    for _ in 0..2048 {
+        let a = free.next_frame();
+        let b = ring.next_frame();
+        assert!(b.iter().all(|s| s.is_finite()));
+        if a != b {
+            different = true;
+        }
+    }
+    assert!(different, "silent OSC 1 must still ring-modulate OSC 2");
+}
+
+#[test]
+fn ring_changes_audio_and_rejects_invalid_amounts() {
+    let mut source = ring_bank(1.0, 0.5);
+    let mut reference = ring_bank(1.0, 0.5);
+    for amount in [f64::NAN, f64::INFINITY, -0.01, 1.01] {
+        assert!(source.set_ring(1, amount).is_err());
+    }
+    assert!(source.set_ring(3, 0.5).is_err());
+    for _ in 0..256 {
+        assert_eq!(source.next_frame(), reference.next_frame());
+    }
+    assert_eq!(source.ring(1).unwrap(), 0.5);
+    assert!(source.ring(3).is_err());
+}
+
+#[test]
+fn oscillator_two_takes_ring_from_oscillator_zero() {
+    let mut free = OscillatorBank::new(48_000.0, 3).unwrap();
+    let mut ring = OscillatorBank::new(48_000.0, 3).unwrap();
+    for bank in [&mut free, &mut ring] {
+        bank.set_params(
+            0,
+            OscillatorParams {
+                waveform: Waveform::Sine,
+                level: 0.0,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        bank.set_params(
+            1,
+            OscillatorParams {
+                level: 0.0,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        bank.set_params(
+            2,
+            OscillatorParams {
+                waveform: Waveform::Sine,
+                pitch: 19.0,
+                level: 1.0,
+                pan: -1.0,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    }
+    ring.set_ring(2, 1.0).unwrap();
+    free.note_on(110.0).unwrap();
+    ring.note_on(110.0).unwrap();
+    let mut different = false;
+    for _ in 0..2048 {
+        if free.next_frame() != ring.next_frame() {
+            different = true;
+        }
+    }
+    assert!(different, "OSC 3 must accept ring modulation from OSC 1");
+}
+
+#[test]
+fn full_ring_inverts_carrier_when_modulator_is_negative() {
+    fn carrier(ring: f64, modulator_phase: f64) -> OscillatorBank {
+        let mut bank = OscillatorBank::new(48_000.0, 3).unwrap();
+        bank.set_params(
+            0,
+            OscillatorParams {
+                waveform: Waveform::Sine,
+                phase: modulator_phase,
+                level: 0.0,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        bank.set_params(
+            1,
+            OscillatorParams {
+                waveform: Waveform::Sine,
+                phase: 0.25,
+                level: 1.0,
+                pan: -1.0,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        bank.set_params(
+            2,
+            OscillatorParams {
+                level: 0.0,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        bank.set_ring(1, ring).unwrap();
+        bank.note_on(1.0).unwrap();
+        bank
+    }
+    let mut positive = carrier(1.0, 0.25);
+    let mut inverted = carrier(1.0, 0.75);
+    let pos = positive.next_frame()[0];
+    let neg = inverted.next_frame()[0];
+    assert!(pos > 0.9, "modulator +1 must keep carrier, got {pos}");
+    assert!(neg < -0.9, "modulator -1 must invert carrier, got {neg}");
+}

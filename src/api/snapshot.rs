@@ -10,7 +10,7 @@ pub(crate) struct Controls {
 }
 
 const WORDS: usize =
-    OSCILLATOR_COUNT * 10 + 6 + 2 * OSCILLATOR_COUNT + GLOBAL_COUNT + SOURCE_COUNT * TARGET_COUNT;
+    OSCILLATOR_COUNT * 10 + 6 + 3 * OSCILLATOR_COUNT + GLOBAL_COUNT + SOURCE_COUNT * TARGET_COUNT;
 
 pub(crate) struct Published {
     version: AtomicU64,
@@ -70,6 +70,10 @@ impl Published {
             n += 1;
         }
         for v in c.params.fm {
+            words[n] = (v as f64).to_bits();
+            n += 1;
+        }
+        for v in c.params.ring {
             words[n] = (v as f64).to_bits();
             n += 1;
         }
@@ -146,6 +150,10 @@ impl Published {
             n += 1;
         }
         for v in &mut c.params.fm {
+            *v = f64::from_bits(words[n]) as f32;
+            n += 1;
+        }
+        for v in &mut c.params.ring {
             *v = f64::from_bits(words[n]) as f32;
             n += 1;
         }

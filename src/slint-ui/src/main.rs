@@ -30,7 +30,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             synth.voice_params().and_then(|voice| {
                 synth
                     .params(index)
-                    .map(|params| oscillator_state(params, voice.sync[index], voice.fm[index]))
+                    .map(|params| oscillator_state(params, voice.sync[index], voice.fm[index], voice.ring[index]))
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -238,10 +238,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             match synth.voice_params().and_then(|voice| {
                 synth
                     .params(index)
-                    .map(|params| (params, voice.sync[index], voice.fm[index]))
+                    .map(|params| (params, voice.sync[index], voice.fm[index], voice.ring[index]))
             }) {
-                Ok((params, sync, fm)) => {
-                    oscillators.set_row_data(index, oscillator_state(params, sync, fm))
+                Ok((params, sync, fm, ring)) => {
+                    oscillators.set_row_data(index, oscillator_state(params, sync, fm, ring))
                 }
                 Err(error) => {
                     window.set_control_error(error.to_string().into());
