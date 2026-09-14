@@ -10,7 +10,7 @@ pub(crate) struct Controls {
 }
 
 const WORDS: usize =
-    OSCILLATOR_COUNT * 10 + 7 + 4 * OSCILLATOR_COUNT + GLOBAL_COUNT + SOURCE_COUNT * TARGET_COUNT;
+    OSCILLATOR_COUNT * 10 + 9 + 4 * OSCILLATOR_COUNT + GLOBAL_COUNT + SOURCE_COUNT * TARGET_COUNT;
 
 pub(crate) struct Published {
     version: AtomicU64,
@@ -64,6 +64,10 @@ impl Published {
         words[n] = (c.params.glide as f64).to_bits();
         n += 1;
         words[n] = u64::from(c.params.legato);
+        n += 1;
+        words[n] = (c.params.pitch_bend as f64).to_bits();
+        n += 1;
+        words[n] = (c.params.pitch_bend_range as f64).to_bits();
         n += 1;
         words[n] = (c.params.noise as f64).to_bits();
         n += 1;
@@ -150,6 +154,10 @@ impl Published {
         c.params.glide = f64::from_bits(words[n]) as f32;
         n += 1;
         c.params.legato = words[n] != 0;
+        n += 1;
+        c.params.pitch_bend = f64::from_bits(words[n]) as f32;
+        n += 1;
+        c.params.pitch_bend_range = f64::from_bits(words[n]) as f32;
         n += 1;
         c.params.noise = f64::from_bits(words[n]) as f32;
         n += 1;

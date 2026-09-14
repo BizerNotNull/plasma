@@ -462,3 +462,28 @@ fn enabling_legato_collapses_chord_and_walks_captured_stack() {
     assert_eq!(poly.active_voice_count(), 1);
     assert!(poly.telemetry().key_track.abs() < 1e-6);
 }
+
+#[test]
+fn channel_pitch_bend_shifts_every_voice_without_dropping_notes() {
+    let mut plain = synth(5);
+    let mut bent = synth(5);
+    let mut params = VoiceParams::default();
+    params.globals[..4].copy_from_slice(&[0.001, 0.001, 1.0, 0.2]);
+    plain.set_params(params).unwrap();
+    params.pitch_bend = 1.0;
+    params.pitch_bend_range = 12.0;
+    bent.set_params(params).unwrap();
+    for note in [60_u8, 64, 67] {
+        plain.note_on(note, 127).unwrap();
+        bent.note_on(note, 127).unwrap();
+    }
+    assert_eq!(plain.active_voice_count(), 3);
+    assert_eq!(bent.active_voice_count(), 3);
+    let mut a = [[0.0; 2]; 512];
+    let mut b = [[0.0; 2]; 512];
+    plain.render(&mut a);
+    bent.render(&mut b);
+    assert_ne!(a, b);
+    assert!(b.iter().all(|f| f.iter().all(|s| s.is_finite())));
+    assert_eq!(bent.active_voice_count(), 3);
+}

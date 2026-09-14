@@ -32,6 +32,8 @@ struct Slot {
 /// first frame after a trigger exactly preserves that slot's preceding output.
 /// Velocity scales amplitude linearly by velocity / 127, before this fade, and
 /// independently supplies each voice's Velocity modulation source.
+/// Channel pitch bend is a voice parameter: every slot scales its glide/note
+/// frequency by `2^(bend * range / 12)` without retriggering or changing key tracking.
 ///
 /// Legato reuses the most recently triggered held slot. Further keys are stored
 /// in a fixed last-note stack: releasing the sounding note retunes to the

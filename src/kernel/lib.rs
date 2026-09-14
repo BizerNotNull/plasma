@@ -49,7 +49,7 @@
 //! 1 kHz, without recomputing unchanged oscillator coefficients.
 //!
 //! [`PolySynth`] supplies eight independent voices, MIDI note/velocity events,
-//! selective release, last-note-priority legato, deterministic stealing and a bounded stereo mix.
+//! channel pitch bend, selective release, last-note-priority legato, deterministic stealing and a bounded stereo mix.
 
 mod dsp;
 mod error;

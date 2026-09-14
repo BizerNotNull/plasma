@@ -85,6 +85,10 @@ pub struct VoiceParams {
     pub glide: f32,
     /// Overlapping notes slide on one voice instead of stacking.
     pub legato: bool,
+    /// Channel pitch bend, -1..=1. Scales playback by `2^(bend * range / 12)`.
+    pub pitch_bend: f32,
+    /// Pitch-bend range in semitones, 0..=24. Default 2.
+    pub pitch_bend_range: f32,
     /// White noise mixed into the filter, 0..=1. Independent of oscillator levels.
     pub noise: f32,
     /// Hard-sync each oscillator to oscillator 0's first unison wrap. Index 0 is ignored.
@@ -115,6 +119,8 @@ impl Default for VoiceParams {
             filter_mode: FilterMode::Lowpass,
             glide: 0.0,
             legato: false,
+            pitch_bend: 0.0,
+            pitch_bend_range: 2.0,
             noise: 0.0,
             sync: [false; OSCILLATOR_COUNT],
             fm: [0.0; OSCILLATOR_COUNT],
@@ -157,6 +163,12 @@ impl VoiceParams {
         }
         if !self.noise.is_finite() || !(0.0..=1.0).contains(&self.noise) {
             return Err(Error::InvalidParameter("noise"));
+        }
+        if !self.pitch_bend.is_finite() || !(-1.0..=1.0).contains(&self.pitch_bend) {
+            return Err(Error::InvalidParameter("pitch bend"));
+        }
+        if !self.pitch_bend_range.is_finite() || !(0.0..=24.0).contains(&self.pitch_bend_range) {
+            return Err(Error::InvalidParameter("pitch bend range"));
         }
         Ok(())
     }

@@ -104,6 +104,8 @@ impl Voice {
     /// all state unchanged. Legato overlapping notes retune without oscillator
     /// retrigger; glide interpolates in octaves over the effective glide time
     /// (target 48). Base [`VoiceParams::glide`] is unchanged by modulation.
+    /// Channel pitch bend then scales the gliding/note frequency by
+    /// `2^(bend * range / 12)` without changing key tracking.
     pub fn note_on(&mut self, frequency: f64, velocity: u8) -> Result<(), Error> {
         if !frequency.is_finite() || frequency < 0.0 {
             return Err(Error::InvalidFrequency);
@@ -125,14 +127,14 @@ impl Voice {
             if self.glide_seconds() <= 0.0 || self.current_hz <= 0.0 || frequency <= 0.0 {
                 self.current_hz = frequency;
                 self.glide_remaining = 0.0;
-                self.bank.set_frequency(frequency)?;
+                self.bank.set_frequency(self.playback_hz())?;
             } else {
                 self.glide_remaining = self.glide_seconds();
             }
         } else {
             self.current_hz = frequency;
             self.glide_remaining = 0.0;
-            self.bank.note_on(frequency)?;
+            self.bank.note_on(self.playback_hz())?;
             self.amp_env.note_on();
             self.mod_env.note_on();
             if self.params.lfo_retrigger {
@@ -151,9 +153,10 @@ impl Voice {
         self.telemetry
     }
 
-    /// Instantaneous oscillator base frequency, including an in-progress glide.
+    /// Instantaneous oscillator base frequency, including an in-progress glide
+    /// and channel pitch bend.
     pub fn frequency(&self) -> f64 {
-        self.current_hz
+        self.playback_hz()
     }
 
     /// AMP ENV alone determines silence; MOD ENV cannot prolong allocation.
@@ -207,6 +210,7 @@ impl Voice {
         let cutoff = (self.effective_globals[6] as f64).min(self.sample_rate * 0.45);
         self.target_g = (std::f64::consts::PI * cutoff / self.sample_rate).tan();
         self.target_k = 2.0 - 1.9 * self.effective_globals[7] as f64;
+        let _ = self.bank.set_frequency(self.playback_hz());
     }
 
     fn glide_seconds(&self) -> f64 {
@@ -217,7 +221,6 @@ impl Voice {
         if self.glide_seconds() <= 0.0 || self.glide_remaining <= 0.0 {
             if self.current_hz != self.target_hz {
                 self.current_hz = self.target_hz;
-                let _ = self.bank.set_frequency(self.current_hz);
             }
             self.glide_remaining = 0.0;
             return;
@@ -238,7 +241,19 @@ impl Voice {
             self.current_hz = self.target_hz;
             self.glide_remaining = 0.0;
         }
-        let _ = self.bank.set_frequency(self.current_hz);
+    }
+
+    fn playback_hz(&self) -> f64 {
+        let hz = self.current_hz;
+        if hz <= 0.0 {
+            return 0.0;
+        }
+        let semitones = f64::from(self.params.pitch_bend) * f64::from(self.params.pitch_bend_range);
+        if semitones == 0.0 {
+            hz
+        } else {
+            hz * 2.0_f64.powf(semitones / 12.0)
+        }
     }
 
     /// Clears the previous note's envelopes, note sources and filter when a

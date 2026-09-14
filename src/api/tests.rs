@@ -594,3 +594,38 @@ fn glide_route_changes_rendered_audio_without_changing_base() {
     assert_ne!(a, b);
     assert!(b.iter().all(|s| s.is_finite()));
 }
+
+#[test]
+fn set_pitch_bend_round_trips_and_changes_rendered_audio() {
+    let synth = Synth::new();
+    assert_eq!(synth.voice_params().unwrap().pitch_bend, 0.0);
+    assert_eq!(synth.voice_params().unwrap().pitch_bend_range, 2.0);
+    synth.set_pitch_bend(0.5).unwrap();
+    synth.set_pitch_bend_range(12.0).unwrap();
+    let params = synth.voice_params().unwrap();
+    assert_eq!(params.pitch_bend, 0.5);
+    assert_eq!(params.pitch_bend_range, 12.0);
+    assert!(synth.set_pitch_bend(1.1).is_err());
+    assert!(synth.set_pitch_bend(-1.1).is_err());
+    assert!(synth.set_pitch_bend(f32::NAN).is_err());
+    assert!(synth.set_pitch_bend_range(-0.1).is_err());
+    assert!(synth.set_pitch_bend_range(24.1).is_err());
+    assert!(synth.set_pitch_bend_range(f32::NAN).is_err());
+    assert_eq!(synth.voice_params().unwrap().pitch_bend, 0.5);
+    assert_eq!(synth.voice_params().unwrap().pitch_bend_range, 12.0);
+
+    let free = Synth::new();
+    let bent = Synth::new();
+    bent.set_pitch_bend(1.0).unwrap();
+    bent.set_pitch_bend_range(12.0).unwrap();
+    free.note_on(60, 127).unwrap();
+    bent.note_on(60, 127).unwrap();
+    let mut free_r = AudioRenderer::new(free, 48_000.0, 5).unwrap();
+    let mut bent_r = AudioRenderer::new(bent, 48_000.0, 5).unwrap();
+    let mut a = [0.0_f32; 4096];
+    let mut b = [0.0_f32; 4096];
+    free_r.render_interleaved(&mut a, 2);
+    bent_r.render_interleaved(&mut b, 2);
+    assert_ne!(a, b);
+    assert!(b.iter().all(|s| s.is_finite()));
+}

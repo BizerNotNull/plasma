@@ -109,6 +109,23 @@ impl Synth {
         })
     }
 
+    /// Channel pitch bend, -1..=1. Playback is `2^(bend * range / 12)` times the
+    /// note/glide frequency. Does not retrigger or change key tracking.
+    pub fn set_pitch_bend(&self, amount: f32) -> Result<(), Error> {
+        self.update(|c| {
+            c.params.pitch_bend = amount;
+            Ok(())
+        })
+    }
+
+    /// Pitch-bend range in semitones, 0..=24. Default 2.
+    pub fn set_pitch_bend_range(&self, semitones: f32) -> Result<(), Error> {
+        self.update(|c| {
+            c.params.pitch_bend_range = semitones;
+            Ok(())
+        })
+    }
+
     /// White noise mixed into the filter, 0..=1. Independent of oscillator levels.
     pub fn set_noise(&self, amount: f32) -> Result<(), Error> {
         self.update(|c| {

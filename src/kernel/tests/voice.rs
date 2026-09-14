@@ -885,3 +885,105 @@ fn in_progress_glide_keeps_trigger_duration_when_effective_stays_nonzero() {
         voice.frequency()
     );
 }
+
+#[test]
+fn default_pitch_bend_is_neutral_and_range_is_two_semitones() {
+    let params = VoiceParams::default();
+    assert_eq!(params.pitch_bend, 0.0);
+    assert_eq!(params.pitch_bend_range, 2.0);
+}
+
+#[test]
+fn octave_pitch_bend_matches_unbent_octave_and_preserves_key_track() {
+    let mut bent = Voice::new(48_000.0, 3).unwrap();
+    let mut octave = Voice::new(48_000.0, 3).unwrap();
+    let mut params = VoiceParams::default();
+    params.globals[..4].copy_from_slice(&[0.001, 0.001, 1.0, 0.2]);
+    params.pitch_bend = 1.0;
+    params.pitch_bend_range = 12.0;
+    bent.set_params(params).unwrap();
+    params.pitch_bend = 0.0;
+    octave.set_params(params).unwrap();
+    bent.note_on(220.0, 64).unwrap();
+    octave.note_on(440.0, 64).unwrap();
+    assert!((bent.frequency() - 440.0).abs() < 1e-9);
+    assert!((bent.telemetry().key_track + 3.0 / 60.0).abs() < 1e-5);
+    assert!((octave.telemetry().key_track - 9.0 / 60.0).abs() < 1e-5);
+    let mut a = [[0.0; 2]; 256];
+    let mut b = [[0.0; 2]; 256];
+    bent.render(&mut a);
+    octave.render(&mut b);
+    assert_eq!(a, b);
+}
+
+#[test]
+fn live_pitch_bend_retunes_without_retriggering() {
+    let mut voice = Voice::new(48_000.0, 11).unwrap();
+    let mut params = VoiceParams::default();
+    params.globals[..4].copy_from_slice(&[0.001, 0.001, 1.0, 0.2]);
+    voice.set_params(params).unwrap();
+    voice.note_on(440.0, 127).unwrap();
+    for _ in 0..2000 {
+        voice.next_frame();
+    }
+    let env = voice.telemetry().env;
+    let mut before = [[0.0; 2]; 128];
+    voice.render(&mut before);
+    params.pitch_bend = -1.0;
+    params.pitch_bend_range = 12.0;
+    voice.set_params(params).unwrap();
+    assert!((voice.frequency() - 220.0).abs() < 1e-9);
+    assert_eq!(voice.telemetry().env, env);
+    let mut after = [[0.0; 2]; 128];
+    voice.render(&mut after);
+    assert_ne!(before, after);
+    assert!(after.iter().all(|f| f.iter().all(|s| s.is_finite())));
+    assert!((voice.telemetry().env - env).abs() < 0.02);
+}
+
+#[test]
+fn invalid_pitch_bend_is_rejected_atomically() {
+    let mut voice = Voice::new(48_000.0, 9).unwrap();
+    let mut params = VoiceParams::default();
+    params.pitch_bend = 1.0;
+    params.pitch_bend_range = 12.0;
+    voice.set_params(params).unwrap();
+    params.pitch_bend = 1.1;
+    assert!(voice.set_params(params).is_err());
+    params.pitch_bend = -1.1;
+    assert!(voice.set_params(params).is_err());
+    params.pitch_bend = f32::NAN;
+    assert!(voice.set_params(params).is_err());
+    params.pitch_bend = 1.0;
+    params.pitch_bend_range = -0.1;
+    assert!(voice.set_params(params).is_err());
+    params.pitch_bend_range = 24.1;
+    assert!(voice.set_params(params).is_err());
+    params.pitch_bend_range = f32::NAN;
+    assert!(voice.set_params(params).is_err());
+    assert_eq!(voice.params().pitch_bend, 1.0);
+    assert_eq!(voice.params().pitch_bend_range, 12.0);
+}
+
+#[test]
+fn pitch_bend_scales_an_in_progress_glide() {
+    let mut params = VoiceParams::default();
+    params.legato = true;
+    params.glide = 0.1;
+    params.pitch_bend = 1.0;
+    params.pitch_bend_range = 12.0;
+    params.globals[..4].copy_from_slice(&[0.001, 0.001, 0.5, 0.2]);
+    let mut voice = Voice::new(48_000.0, 9).unwrap();
+    voice.set_params(params).unwrap();
+    voice.note_on(220.0, 127).unwrap();
+    for _ in 0..1000 {
+        voice.next_frame();
+    }
+    assert!((voice.frequency() - 440.0).abs() < 1e-6);
+    voice.note_on(440.0, 127).unwrap();
+    for _ in 0..2400 {
+        voice.next_frame();
+    }
+    let hz = voice.frequency();
+    assert!(hz > 460.0 && hz < 860.0, "bent intermediate pitch {hz}");
+}
