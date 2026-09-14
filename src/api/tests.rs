@@ -240,3 +240,20 @@ fn set_filter_mode_is_readable_on_voice_params() {
         FilterMode::Bandpass
     );
 }
+
+#[test]
+fn set_glide_and_legato_round_trip() {
+    let synth = Synth::new();
+    assert_eq!(synth.voice_params().unwrap().glide, 0.0);
+    assert!(!synth.voice_params().unwrap().legato);
+    synth.set_glide(0.25).unwrap();
+    synth.set_legato(true).unwrap();
+    let params = synth.voice_params().unwrap();
+    assert_eq!(params.glide, 0.25);
+    assert!(params.legato);
+    assert!(synth.set_glide(-0.1).is_err());
+    assert!(synth.set_glide(2.1).is_err());
+    assert!(synth.set_glide(f32::NAN).is_err());
+    assert_eq!(synth.voice_params().unwrap().glide, 0.25);
+    assert!(synth.voice_params().unwrap().legato);
+}

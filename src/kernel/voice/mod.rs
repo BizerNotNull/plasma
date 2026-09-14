@@ -36,6 +36,9 @@ pub struct Voice {
     target_g: f64,
     target_k: f64,
     smooth: f64,
+    current_hz: f64,
+    target_hz: f64,
+    glide_remaining: f64,
 }
 
 impl Voice {
@@ -61,6 +64,9 @@ impl Voice {
             target_g: 0.0,
             target_k: 1.0,
             smooth: 1.0 - (-1.0 / (sample_rate * 0.003)).exp(),
+            current_hz: 0.0,
+            target_hz: 0.0,
+            glide_remaining: 0.0,
         };
         voice.control_tick();
         voice.g = voice.target_g;
@@ -82,12 +88,14 @@ impl Voice {
         Ok(())
     }
 
-    /// Retriggers both envelopes from their current levels (no discontinuity).
-    /// Free LFO keeps its phase; retrigger LFO starts at the effective phase knob.
-    /// Velocity must be 0..=127 and affects modulation only, not amplitude.
-    /// Key tracking is inferred from frequency, centered on MIDI 60 with 60
-    /// semitones per unit and clamped to [-1, 1]; zero frequency maps to -1.
-    /// Invalid frequency or velocity leaves all state unchanged.
+    /// Retriggers both envelopes from their current levels (no discontinuity),
+    /// unless legato and AMP ENV is already running. Free LFO keeps its phase;
+    /// retrigger LFO starts at the effective phase knob. Velocity must be 0..=127
+    /// and affects modulation only, not amplitude. Key tracking is inferred from
+    /// frequency, centered on MIDI 60 with 60 semitones per unit and clamped to
+    /// [-1, 1]; zero frequency maps to -1. Invalid frequency or velocity leaves
+    /// all state unchanged. Legato overlapping notes retune without oscillator
+    /// retrigger; glide interpolates in octaves over [`VoiceParams::glide`].
     pub fn note_on(&mut self, frequency: f64, velocity: u8) -> Result<(), Error> {
         if !frequency.is_finite() || frequency < 0.0 {
             return Err(Error::InvalidFrequency);
@@ -103,11 +111,25 @@ impl Voice {
                 as f32
         };
         self.control_tick();
-        self.bank.note_on(frequency)?;
-        self.amp_env.note_on();
-        self.mod_env.note_on();
-        if self.params.lfo_retrigger {
-            self.lfo_phase = 0.0;
+        let slide = self.params.legato && !self.amp_env.is_idle();
+        self.target_hz = frequency;
+        if slide {
+            if self.params.glide <= 0.0 || self.current_hz <= 0.0 || frequency <= 0.0 {
+                self.current_hz = frequency;
+                self.glide_remaining = 0.0;
+                self.bank.set_frequency(frequency)?;
+            } else {
+                self.glide_remaining = f64::from(self.params.glide);
+            }
+        } else {
+            self.current_hz = frequency;
+            self.glide_remaining = 0.0;
+            self.bank.note_on(frequency)?;
+            self.amp_env.note_on();
+            self.mod_env.note_on();
+            if self.params.lfo_retrigger {
+                self.lfo_phase = 0.0;
+            }
         }
         Ok(())
     }
@@ -121,12 +143,18 @@ impl Voice {
         self.telemetry
     }
 
+    /// Instantaneous oscillator base frequency, including an in-progress glide.
+    pub fn frequency(&self) -> f64 {
+        self.current_hz
+    }
+
     /// AMP ENV alone determines silence; MOD ENV cannot prolong allocation.
     pub fn is_silent(&self) -> bool {
         self.amp_env.is_idle()
     }
 
     fn control_tick(&mut self) {
+        self.advance_glide();
         for i in 0..TARGET_COUNT {
             self.telemetry.effective[i] = (self.base[i]
                 + self.params.routes[0][i] * self.telemetry.env
@@ -164,6 +192,34 @@ impl Voice {
         self.target_k = 2.0 - 1.9 * self.effective_globals[7] as f64;
     }
 
+    fn advance_glide(&mut self) {
+        if self.params.glide <= 0.0 || self.glide_remaining <= 0.0 {
+            if self.current_hz != self.target_hz {
+                self.current_hz = self.target_hz;
+                let _ = self.bank.set_frequency(self.current_hz);
+            }
+            self.glide_remaining = 0.0;
+            return;
+        }
+        let dt = self.period as f64 / self.sample_rate;
+        let step = dt.min(self.glide_remaining);
+        let frac = step / self.glide_remaining;
+        self.glide_remaining -= step;
+        if self.current_hz > 0.0 && self.target_hz > 0.0 {
+            let from = self.current_hz.log2();
+            let to = self.target_hz.log2();
+            self.current_hz = 2.0_f64.powf(from + (to - from) * frac);
+        } else {
+            self.current_hz = self.target_hz;
+            self.glide_remaining = 0.0;
+        }
+        if self.glide_remaining <= 0.0 {
+            self.current_hz = self.target_hz;
+            self.glide_remaining = 0.0;
+        }
+        let _ = self.bank.set_frequency(self.current_hz);
+    }
+
     /// Clears the previous note's envelopes, note sources and filter when a
     /// polyphonic slot is reassigned. Free LFO and smoothed controls stay continuous.
     pub(crate) fn reset_note(&mut self) {
@@ -174,6 +230,9 @@ impl Voice {
         self.telemetry.velocity = 0.0;
         self.telemetry.key_track = 0.0;
         self.filters = std::array::from_fn(|_| Lowpass::default());
+        self.current_hz = 0.0;
+        self.target_hz = 0.0;
+        self.glide_remaining = 0.0;
     }
 
     /// One stereo frame, with no allocation, synchronization or shared state.

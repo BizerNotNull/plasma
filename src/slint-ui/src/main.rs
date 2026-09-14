@@ -54,6 +54,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     window.set_lfo_wave(0);
     window.set_lfo_retrigger(params.lfo_retrigger);
     window.set_filter_mode(0);
+    window.set_glide(params.glide);
+    window.set_legato(params.legato);
     window.on_global_edited({
         let weak = window.as_weak();
         let synth = synth.clone();
@@ -147,6 +149,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .and_then(|mode| synth.set_filter_mode(mode).map_err(Error::from));
             if show_result(&window, result) {
                 window.set_filter_mode(mode);
+            }
+        }
+    });
+    window.on_glide_edited({
+        let weak = window.as_weak();
+        let synth = synth.clone();
+        move |seconds| {
+            let Some(window) = weak.upgrade() else { return };
+            if show_result(&window, synth.set_glide(seconds)) {
+                window.set_glide(seconds);
+            }
+        }
+    });
+    window.on_legato_edited({
+        let weak = window.as_weak();
+        let synth = synth.clone();
+        move |legato| {
+            let Some(window) = weak.upgrade() else { return };
+            if show_result(&window, synth.set_legato(legato)) {
+                window.set_legato(legato);
             }
         }
     });

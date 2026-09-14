@@ -368,3 +368,64 @@ fn filter_mode_selects_svf_taps() {
     assert!(rms(&bp) < rms(&lp));
     assert!(peak(&bp_res) > peak(&bp));
 }
+
+#[test]
+fn default_glide_is_instant_and_legato_glide_slides_pitch() {
+    assert_eq!(VoiceParams::default().glide, 0.0);
+    assert!(!VoiceParams::default().legato);
+
+    let mut voice = Voice::new(48000.0, 9).unwrap();
+    let mut params = VoiceParams::default();
+    params.globals[..4].copy_from_slice(&[0.001, 0.001, 0.5, 0.2]);
+    voice.set_params(params).unwrap();
+    voice.note_on(220.0, 127).unwrap();
+    for _ in 0..1000 {
+        voice.next_frame();
+    }
+    voice.note_on(440.0, 127).unwrap();
+    assert!((voice.frequency() - 440.0).abs() < 1e-9);
+
+    params.legato = true;
+    params.glide = 0.0;
+    voice.set_params(params).unwrap();
+    voice.note_on(220.0, 127).unwrap();
+    for _ in 0..1000 {
+        voice.next_frame();
+    }
+    let env = voice.telemetry().env;
+    voice.note_on(440.0, 127).unwrap();
+    assert_eq!(voice.telemetry().env, env);
+    assert!((voice.frequency() - 440.0).abs() < 1e-9);
+
+    voice.note_on(220.0, 127).unwrap();
+    params.glide = 0.1;
+    voice.set_params(params).unwrap();
+    assert!((voice.frequency() - 220.0).abs() < 1e-6);
+    let env = voice.telemetry().env;
+    voice.note_on(440.0, 127).unwrap();
+    assert_eq!(voice.telemetry().env, env);
+    for _ in 0..2400 {
+        voice.next_frame();
+    }
+    let hz = voice.frequency();
+    assert!(hz > 230.0 && hz < 430.0, "intermediate pitch {hz}");
+    assert!(
+        (voice.telemetry().env - 0.5).abs() < 0.02,
+        "AMP ENV retriggered to {}",
+        voice.telemetry().env
+    );
+}
+
+#[test]
+fn invalid_glide_is_rejected() {
+    let mut voice = Voice::new(48000.0, 9).unwrap();
+    let mut params = VoiceParams::default();
+    params.glide = -0.1;
+    assert!(voice.set_params(params).is_err());
+    params.glide = 2.1;
+    assert!(voice.set_params(params).is_err());
+    params.glide = f32::NAN;
+    assert!(voice.set_params(params).is_err());
+    params.glide = 2.0;
+    voice.set_params(params).unwrap();
+}

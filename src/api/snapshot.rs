@@ -10,7 +10,7 @@ pub(crate) struct Controls {
 }
 
 const WORDS: usize =
-    plasma_kernel::OSCILLATOR_COUNT * 10 + 4 + GLOBAL_COUNT + SOURCE_COUNT * TARGET_COUNT;
+    plasma_kernel::OSCILLATOR_COUNT * 10 + 6 + GLOBAL_COUNT + SOURCE_COUNT * TARGET_COUNT;
 
 pub(crate) struct Published {
     version: AtomicU64,
@@ -60,6 +60,10 @@ impl Published {
         words[n] = u64::from(c.params.lfo_retrigger);
         n += 1;
         words[n] = c.params.filter_mode as u64;
+        n += 1;
+        words[n] = (c.params.glide as f64).to_bits();
+        n += 1;
+        words[n] = u64::from(c.params.legato);
         n += 1;
         for v in c.params.routes.into_iter().flatten() {
             words[n] = (v as f64).to_bits();
@@ -124,6 +128,10 @@ impl Published {
             2 => FilterMode::Highpass,
             _ => FilterMode::Lowpass,
         };
+        n += 1;
+        c.params.glide = f64::from_bits(words[n]) as f32;
+        n += 1;
+        c.params.legato = words[n] != 0;
         n += 1;
         for v in c.params.routes.iter_mut().flatten() {
             *v = f64::from_bits(words[n]) as f32;

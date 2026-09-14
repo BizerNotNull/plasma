@@ -96,24 +96,37 @@ impl PolySynth {
             .slots
             .iter()
             .position(|slot| slot.held && slot.note == Some(note));
-        let index = repeated
-            .or_else(|| self.slots.iter().position(|slot| slot.note.is_none()))
-            .or_else(|| {
-                self.slots
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, slot)| !slot.held)
-                    .max_by_key(|(_, slot)| slot.rank)
-                    .map(|(i, _)| i)
-            })
-            .unwrap_or_else(|| {
-                self.slots
-                    .iter()
-                    .enumerate()
-                    .max_by_key(|(_, slot)| slot.rank)
-                    .map(|(i, _)| i)
-                    .expect("eight slots")
-            });
+        let legato_held = self.params.legato
+            && repeated.is_none()
+            && self.slots.iter().any(|slot| slot.held && slot.rank == 0);
+        let index = if let Some(index) = repeated {
+            index
+        } else if legato_held {
+            self.slots
+                .iter()
+                .position(|slot| slot.held && slot.rank == 0)
+                .expect("rank-0 held slot")
+        } else {
+            self.slots
+                .iter()
+                .position(|slot| slot.note.is_none())
+                .or_else(|| {
+                    self.slots
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, slot)| !slot.held)
+                        .max_by_key(|(_, slot)| slot.rank)
+                        .map(|(i, _)| i)
+                })
+                .unwrap_or_else(|| {
+                    self.slots
+                        .iter()
+                        .enumerate()
+                        .max_by_key(|(_, slot)| slot.rank)
+                        .map(|(i, _)| i)
+                        .expect("eight slots")
+                })
+        };
         let old_rank = self.slots[index].rank;
         for slot in &mut self.slots {
             if slot.rank < old_rank {
@@ -122,7 +135,7 @@ impl PolySynth {
         }
         let slot = &mut self.slots[index];
         slot.rank = 0;
-        if repeated.is_none() {
+        if repeated.is_none() && !legato_held {
             slot.voice.reset_note();
         }
         slot.voice

@@ -308,3 +308,22 @@ fn retriggers_and_stolen_slots_use_new_note_sources_immediately() {
     assert!(synth.telemetry().key_track.abs() < 1e-6);
     assert!((synth.telemetry().effective[7] - 0.5).abs() < 1e-6);
 }
+
+#[test]
+fn legato_reuses_one_voice_and_poly_is_unchanged_when_legato_off() {
+    let mut poly = synth(40);
+    for note in 60..68 {
+        poly.note_on(note, 127).unwrap();
+    }
+    assert_eq!(poly.active_voice_count(), POLYPHONY);
+
+    let mut legato = synth(41);
+    let mut params = VoiceParams::default();
+    params.globals[..8].copy_from_slice(&[0.001, 0.001, 1.0, 0.01, 1.0, 0.0, 18000.0, 0.1]);
+    params.legato = true;
+    params.glide = 0.05;
+    legato.set_params(params).unwrap();
+    legato.note_on(60, 127).unwrap();
+    legato.note_on(64, 127).unwrap();
+    assert_eq!(legato.active_voice_count(), 1);
+}

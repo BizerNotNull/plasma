@@ -80,6 +80,10 @@ pub struct VoiceParams {
     pub lfo_wave: LfoWave,
     pub lfo_retrigger: bool,
     pub filter_mode: FilterMode,
+    /// Portamento time in seconds, 0..=2. Zero is instantaneous.
+    pub glide: f32,
+    /// Overlapping notes slide on one voice instead of stacking.
+    pub legato: bool,
     /// [source: AMP ENV=0 / LFO=1 / MOD ENV=2 / Velocity=3 / KeyTrack=4][destination].
     /// Zero removes a route. Key tracking is centered on MIDI 60, at 60 semitones
     /// per unit; depths use normalized target travel, not exact cutoff tracking.
@@ -98,6 +102,8 @@ impl Default for VoiceParams {
             lfo_wave: LfoWave::Sine,
             lfo_retrigger: true,
             filter_mode: FilterMode::Lowpass,
+            glide: 0.0,
+            legato: false,
             routes: [[0.0; TARGET_COUNT]; SOURCE_COUNT],
         }
     }
@@ -116,6 +122,9 @@ impl VoiceParams {
             if !depth.is_finite() || !(-1.0..=1.0).contains(depth) {
                 return Err(Error::InvalidParameter("route depth"));
             }
+        }
+        if !self.glide.is_finite() || !(0.0..=2.0).contains(&self.glide) {
+            return Err(Error::InvalidParameter("glide"));
         }
         Ok(())
     }

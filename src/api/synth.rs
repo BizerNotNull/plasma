@@ -93,6 +93,20 @@ impl Synth {
         })
     }
 
+    pub fn set_glide(&self, seconds: f32) -> Result<(), Error> {
+        self.update(|c| {
+            c.params.glide = seconds;
+            Ok(())
+        })
+    }
+
+    pub fn set_legato(&self, legato: bool) -> Result<(), Error> {
+        self.update(|c| {
+            c.params.legato = legato;
+            Ok(())
+        })
+    }
+
     /// AMP ENV, LFO, MOD ENV, velocity and key tracking can address every target.
     /// Source indices: 0 AMP ENV, 1 LFO, 2 MOD ENV, 3 velocity (0..1),
     /// 4 key tracking (MIDI 60 = 0, 60 semitones/unit, clamped to -1..1).
