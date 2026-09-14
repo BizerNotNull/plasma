@@ -109,6 +109,16 @@ impl Synth {
         })
     }
 
+    /// Damper pedal. Note-off of unheld keys is deferred until sustain is released.
+    /// Pedaled slots are stolen before physically held notes. All-notes-off still
+    /// releases immediately.
+    pub fn set_sustain(&self, sustain: bool) -> Result<(), Error> {
+        self.update(|c| {
+            c.params.sustain = sustain;
+            Ok(())
+        })
+    }
+
     /// Channel pitch bend, -1..=1. Playback is `2^(bend * range / 12)` times the
     /// note/glide frequency. Does not retrigger or change key tracking.
     pub fn set_pitch_bend(&self, amount: f32) -> Result<(), Error> {

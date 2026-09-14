@@ -671,3 +671,27 @@ fn set_pitch_bend_round_trips_and_changes_rendered_audio() {
     assert_ne!(a, b);
     assert!(b.iter().all(|s| s.is_finite()));
 }
+
+#[test]
+fn set_sustain_round_trips_and_holds_rendered_notes() {
+    let synth = Synth::new();
+    assert!(!synth.voice_params().unwrap().sustain);
+    synth.set_sustain(true).unwrap();
+    assert!(synth.voice_params().unwrap().sustain);
+    synth.set_global(0, 0.001).unwrap();
+    synth.set_global(1, 0.001).unwrap();
+    synth.set_global(2, 1.0).unwrap();
+    synth.set_global(3, 0.01).unwrap();
+    let mut renderer = AudioRenderer::new(synth.clone(), 48_000.0, 22).unwrap();
+    let mut frames = [[0.0; 2]; 512];
+    synth.note_on(60, 127).unwrap();
+    renderer.render(&mut frames);
+    synth.note_off(60).unwrap();
+    renderer.render(&mut frames);
+    assert_eq!(renderer.active_voice_count(), 1);
+    assert!(frames.iter().flatten().any(|sample| sample.abs() > 0.0001));
+    synth.set_sustain(false).unwrap();
+    assert!(!synth.voice_params().unwrap().sustain);
+    renderer.render(&mut [[0.0; 2]; 4096]);
+    assert_eq!(renderer.active_voice_count(), 0);
+}

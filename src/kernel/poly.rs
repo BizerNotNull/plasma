@@ -8,6 +8,7 @@ struct Slot {
     voice: Voice,
     note: Option<u8>,
     held: bool,
+    pedal: bool,
     // A permutation of 0..POLYPHONY; zero is most recently triggered.
     rank: usize,
     velocity: f32,
@@ -34,13 +35,18 @@ struct Slot {
 /// independently supplies each voice's Velocity modulation source.
 /// Channel pitch bend is a voice parameter: every slot scales its glide/note
 /// frequency by `2^(bend * range / 12)` without retriggering or changing key tracking.
+/// Channel sustain (damper) defers note-off while the pedal is down. Releasing
+/// sustain note-offs every unheld slot; all-notes-off still releases immediately.
+/// Pedaled slots count as unheld for stealing. Retriggering a pedaled note reuses
+/// its slot. Legato reuses a pedaled voice after the last physical key is released.
 ///
 /// Legato reuses the most recently triggered held slot. Further keys are stored
 /// in a fixed last-note stack: releasing the sounding note retunes to the
 /// previous still-held key without releasing the envelope, and releasing a
 /// non-sounding key only forgets it. Enabling legato captures currently held
-/// keys in trigger order and releases extra voices so one remains; polyphony
-/// is unchanged when legato is off.
+/// keys in trigger order and releases extra voices so one remains, including
+/// pedaled extras. A physically held slot is kept over a more recent pedaled
+/// one. Polyphony is unchanged when legato is off.
 ///
 /// Mixing uses fixed 1/8 headroom, independent of the active count, then clamps
 /// only the final stereo sum to [-1, 1]. Construction, events and rendering use
@@ -68,6 +74,7 @@ impl PolySynth {
                 .expect("validated sample rate"),
                 note: None,
                 held: false,
+                pedal: false,
                 rank: i,
                 velocity: 0.0,
                 last: [0.0; 2],
@@ -94,11 +101,15 @@ impl PolySynth {
         }
         self.idle_telemetry.effective = params.normalized();
         let was_legato = self.params.legato;
+        let was_sustain = self.params.sustain;
         self.params = params;
         if !self.params.legato {
             self.clear_held();
         } else if !was_legato {
             self.capture_held_keys();
+        }
+        if was_sustain && !self.params.sustain {
+            self.release_unheld();
         }
         Ok(())
     }
@@ -116,10 +127,9 @@ impl PolySynth {
         if self.params.legato {
             self.push_held(note, velocity);
         }
-        let repeated = self
-            .slots
-            .iter()
-            .position(|slot| slot.held && slot.note == Some(note));
+        let repeated = self.slots.iter().position(|slot| {
+            slot.note == Some(note) && (slot.held || slot.pedal)
+        });
         let legato_held = if self.params.legato && repeated.is_none() {
             self.legato_slot()
         } else {
@@ -158,6 +168,7 @@ impl PolySynth {
         slot.voice.note_on(midi_hz(note), velocity)?;
         slot.note = Some(note);
         slot.held = true;
+        slot.pedal = false;
         slot.velocity = velocity as f32 / 127.0;
         slot.transition_from = slot.last;
         slot.transition_left = self.transition_frames;
@@ -184,6 +195,12 @@ impl PolySynth {
                         slot.transition_left = self.transition_frames;
                         return Ok(());
                     }
+                } else if self.params.sustain {
+                    if let Some(index) = self.legato_slot() {
+                        self.slots[index].held = false;
+                        self.slots[index].pedal = true;
+                    }
+                    return Ok(());
                 }
             } else if !self
                 .slots
@@ -196,7 +213,12 @@ impl PolySynth {
         for slot in &mut self.slots {
             if slot.held && slot.note == Some(note) {
                 slot.held = false;
-                slot.voice.note_off();
+                if self.params.sustain {
+                    slot.pedal = true;
+                } else {
+                    slot.pedal = false;
+                    slot.voice.note_off();
+                }
             }
         }
         Ok(())
@@ -207,6 +229,7 @@ impl PolySynth {
         self.clear_held();
         for slot in &mut self.slots {
             slot.held = false;
+            slot.pedal = false;
             slot.voice.note_off();
         }
     }
@@ -232,6 +255,7 @@ impl PolySynth {
             if slot.voice.is_silent() && slot.transition_left == 0 {
                 slot.note = None;
                 slot.held = false;
+                slot.pedal = false;
             }
         }
         mix.map(|v| (v / POLYPHONY as f64).clamp(-1.0, 1.0) as f32)
@@ -273,7 +297,7 @@ impl PolySynth {
         self.slots
             .iter()
             .enumerate()
-            .filter(|(_, slot)| slot.held)
+            .filter(|(_, slot)| slot.held || slot.pedal)
             .min_by_key(|(_, slot)| slot.rank)
             .map(|(i, _)| i)
     }
@@ -302,10 +326,19 @@ impl PolySynth {
                 }
             }
         }
-        if let Some(keep) = self.legato_slot() {
+        let keep = self
+            .slots
+            .iter()
+            .enumerate()
+            .filter(|(_, slot)| slot.held)
+            .min_by_key(|(_, slot)| slot.rank)
+            .map(|(i, _)| i)
+            .or_else(|| self.legato_slot());
+        if let Some(keep) = keep {
             for (i, slot) in self.slots.iter_mut().enumerate() {
-                if i != keep && slot.held {
+                if i != keep && (slot.held || slot.pedal) {
                     slot.held = false;
+                    slot.pedal = false;
                     slot.voice.note_off();
                 }
             }
@@ -339,6 +372,15 @@ impl PolySynth {
 
     fn clear_held(&mut self) {
         self.held_len = 0;
+    }
+
+    fn release_unheld(&mut self) {
+        for slot in &mut self.slots {
+            if !slot.held && slot.note.is_some() {
+                slot.pedal = false;
+                slot.voice.note_off();
+            }
+        }
     }
 }
 

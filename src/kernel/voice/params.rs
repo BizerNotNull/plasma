@@ -85,6 +85,10 @@ pub struct VoiceParams {
     pub glide: f32,
     /// Overlapping notes slide on one voice instead of stacking.
     pub legato: bool,
+    /// Damper pedal. Note-off of keys that are no longer held is deferred until
+    /// sustain is released. Physically held keys keep sounding. Pedaled slots
+    /// count as unheld for stealing.
+    pub sustain: bool,
     /// Channel pitch bend, -1..=1. Scales playback by `2^(bend * range / 12)`.
     pub pitch_bend: f32,
     /// Pitch-bend range in semitones, 0..=24. Default 2.
@@ -120,6 +124,7 @@ impl Default for VoiceParams {
             filter_mode: FilterMode::Lowpass,
             glide: 0.0,
             legato: false,
+            sustain: false,
             pitch_bend: 0.0,
             pitch_bend_range: 2.0,
             noise: 0.0,

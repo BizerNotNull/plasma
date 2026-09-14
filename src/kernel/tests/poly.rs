@@ -487,3 +487,171 @@ fn channel_pitch_bend_shifts_every_voice_without_dropping_notes() {
     assert!(b.iter().all(|f| f.iter().all(|s| s.is_finite())));
     assert_eq!(bent.active_voice_count(), 3);
 }
+
+#[test]
+fn sustain_holds_unheld_notes_until_pedal_is_released() {
+    let mut poly = synth(50);
+    let mut params = VoiceParams::default();
+    params.globals[..8].copy_from_slice(&[0.001, 0.001, 1.0, 0.01, 1.0, 0.0, 18000.0, 0.1]);
+    params.sustain = true;
+    poly.set_params(params).unwrap();
+    poly.note_on(60, 127).unwrap();
+    poly.note_on(64, 127).unwrap();
+    advance(&mut poly, 200);
+    poly.note_off(60).unwrap();
+    poly.note_off(64).unwrap();
+    advance(&mut poly, 200);
+    assert_eq!(poly.active_voice_count(), 2);
+    assert!(poly.telemetry().env > 0.5);
+    assert!((0..512).any(|_| poly.next_frame().iter().any(|s| s.abs() > 0.0001)));
+
+    params.sustain = false;
+    poly.set_params(params).unwrap();
+    advance(&mut poly, 2000);
+    assert_eq!(poly.active_voice_count(), 0);
+}
+
+#[test]
+fn releasing_sustain_keeps_physically_held_notes() {
+    let mut poly = synth(51);
+    let mut params = VoiceParams::default();
+    params.globals[..8].copy_from_slice(&[0.001, 0.001, 1.0, 0.01, 1.0, 0.0, 18000.0, 0.1]);
+    params.sustain = true;
+    poly.set_params(params).unwrap();
+    poly.note_on(60, 127).unwrap();
+    poly.note_on(64, 127).unwrap();
+    poly.note_off(64).unwrap();
+    params.sustain = false;
+    poly.set_params(params).unwrap();
+    advance(&mut poly, 2000);
+    assert_eq!(poly.active_voice_count(), 1);
+    assert!(poly.telemetry().key_track.abs() < 1e-6);
+    poly.note_off(60).unwrap();
+    advance(&mut poly, 2000);
+    assert_eq!(poly.active_voice_count(), 0);
+}
+
+#[test]
+fn pedaled_note_retriggers_its_slot_and_is_stolen_before_held() {
+    let mut poly = synth(52);
+    let mut params = VoiceParams::default();
+    params.globals[..8].copy_from_slice(&[0.001, 0.001, 1.0, 0.01, 1.0, 0.0, 18000.0, 0.1]);
+    params.sustain = true;
+    poly.set_params(params).unwrap();
+    for note in 60..68 {
+        poly.note_on(note, 127).unwrap();
+    }
+    poly.note_off(67).unwrap();
+    poly.note_on(67, 100).unwrap();
+    assert_eq!(poly.active_voice_count(), POLYPHONY);
+    poly.note_off(67).unwrap();
+    poly.note_on(68, 127).unwrap();
+    poly.note_off(60).unwrap();
+    advance(&mut poly, 200);
+    assert_eq!(poly.active_voice_count(), POLYPHONY);
+    params.sustain = false;
+    poly.set_params(params).unwrap();
+    advance(&mut poly, 2000);
+    assert_eq!(poly.active_voice_count(), POLYPHONY - 1);
+}
+
+#[test]
+fn all_notes_off_releases_despite_sustain() {
+    let mut poly = synth(53);
+    let mut params = VoiceParams::default();
+    params.globals[..8].copy_from_slice(&[0.001, 0.001, 1.0, 0.01, 1.0, 0.0, 18000.0, 0.1]);
+    params.sustain = true;
+    poly.set_params(params).unwrap();
+    poly.note_on(60, 127).unwrap();
+    poly.note_on(64, 127).unwrap();
+    poly.note_off(60).unwrap();
+    poly.all_notes_off();
+    advance(&mut poly, 2000);
+    assert_eq!(poly.active_voice_count(), 0);
+}
+
+#[test]
+fn legato_last_key_stays_sounding_while_sustained() {
+    let mut poly = synth(54);
+    let mut params = VoiceParams::default();
+    params.globals[..8].copy_from_slice(&[0.001, 0.001, 1.0, 0.01, 1.0, 0.0, 18000.0, 0.1]);
+    params.legato = true;
+    params.sustain = true;
+    poly.set_params(params).unwrap();
+    poly.note_on(60, 127).unwrap();
+    poly.note_on(64, 127).unwrap();
+    poly.note_off(64).unwrap();
+    assert!(poly.telemetry().key_track.abs() < 1e-6);
+    poly.note_off(60).unwrap();
+    advance(&mut poly, 200);
+    assert_eq!(poly.active_voice_count(), 1);
+    assert!(poly.telemetry().env > 0.5);
+    assert!((0..512).any(|_| poly.next_frame().iter().any(|s| s.abs() > 0.0001)));
+    poly.note_on(67, 127).unwrap();
+    assert_eq!(poly.active_voice_count(), 1);
+    assert!((poly.telemetry().key_track - 7.0 / 60.0).abs() < 1e-5);
+}
+
+#[test]
+fn pedaled_retrigger_reuses_slot_without_stealing_held() {
+    let mut poly = synth(55);
+    let mut params = VoiceParams::default();
+    params.globals[..8].copy_from_slice(&[0.001, 0.001, 1.0, 0.01, 1.0, 0.0, 18000.0, 0.1]);
+    params.sustain = true;
+    poly.set_params(params).unwrap();
+    poly.note_on(60, 127).unwrap();
+    poly.note_on(64, 1).unwrap();
+    poly.note_off(64).unwrap();
+    poly.note_on(64, 127).unwrap();
+    assert_eq!(poly.active_voice_count(), 2);
+    poly.note_off(60).unwrap();
+    advance(&mut poly, 2000);
+    assert_eq!(poly.active_voice_count(), 2);
+    assert!((poly.telemetry().key_track - 4.0 / 60.0).abs() < 1e-5);
+    assert!((poly.telemetry().velocity - 1.0).abs() < 1e-6);
+}
+
+#[test]
+fn enabling_legato_collapses_pedaled_voices_and_prefers_held() {
+    let mut poly = synth(56);
+    let mut params = VoiceParams::default();
+    params.globals[..8].copy_from_slice(&[0.001, 0.001, 1.0, 0.01, 1.0, 0.0, 18000.0, 0.1]);
+    params.sustain = true;
+    poly.set_params(params).unwrap();
+    poly.note_on(60, 1).unwrap();
+    poly.note_on(64, 127).unwrap();
+    poly.note_off(64).unwrap();
+    assert_eq!(poly.active_voice_count(), 2);
+    params.legato = true;
+    poly.set_params(params).unwrap();
+    advance(&mut poly, 2000);
+    assert_eq!(poly.active_voice_count(), 1);
+    assert!(poly.telemetry().key_track.abs() < 1e-6);
+    assert!((poly.telemetry().velocity - 1.0 / 127.0).abs() < 1e-6);
+    poly.note_off(60).unwrap();
+    advance(&mut poly, 200);
+    assert_eq!(poly.active_voice_count(), 1);
+    assert!(poly.telemetry().env > 0.5);
+}
+
+#[test]
+fn enabling_legato_with_only_pedaled_voices_keeps_one() {
+    let mut poly = synth(57);
+    let mut params = VoiceParams::default();
+    params.globals[..8].copy_from_slice(&[0.001, 0.001, 1.0, 0.01, 1.0, 0.0, 18000.0, 0.1]);
+    params.sustain = true;
+    poly.set_params(params).unwrap();
+    poly.note_on(60, 127).unwrap();
+    poly.note_on(64, 127).unwrap();
+    poly.note_off(60).unwrap();
+    poly.note_off(64).unwrap();
+    assert_eq!(poly.active_voice_count(), 2);
+    params.legato = true;
+    poly.set_params(params).unwrap();
+    advance(&mut poly, 2000);
+    assert_eq!(poly.active_voice_count(), 1);
+    assert!((poly.telemetry().key_track - 4.0 / 60.0).abs() < 1e-5);
+    poly.note_on(67, 127).unwrap();
+    assert_eq!(poly.active_voice_count(), 1);
+    assert!((poly.telemetry().key_track - 7.0 / 60.0).abs() < 1e-5);
+}
