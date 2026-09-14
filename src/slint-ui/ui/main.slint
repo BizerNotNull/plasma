@@ -115,7 +115,10 @@ component OscillatorCard inherits Panel {
                 min-width: 72px;
                 accent: #b8e480;
                 selected: root.state.sync;
-                activated => { root.edited(10, root.state.sync ? 0 : 1); }
+                activated => {
+                    Modulation.selected-target = 49 + root.number;
+                    root.edited(10, root.state.sync ? 0 : 1);
+                }
             }
         }
         HorizontalLayout {
@@ -240,7 +243,7 @@ export component MainWindow inherits Window {
     callback noise-edited(float);
     callback pitch-bend-edited(float);
     callback pitch-bend-range-edited(float);
-    private property <[string]> destinations: ["OSC 1 · Semitone", "OSC 1 · Fine", "OSC 1 · Phase", "OSC 1 · Phase random", "OSC 1 · Pulse width", "OSC 1 · Unison", "OSC 1 · Detune", "OSC 1 · Pan", "OSC 1 · Level", "OSC 2 · Semitone", "OSC 2 · Fine", "OSC 2 · Phase", "OSC 2 · Phase random", "OSC 2 · Pulse width", "OSC 2 · Unison", "OSC 2 · Detune", "OSC 2 · Pan", "OSC 2 · Level", "OSC 3 · Semitone", "OSC 3 · Fine", "OSC 3 · Phase", "OSC 3 · Phase random", "OSC 3 · Pulse width", "OSC 3 · Unison", "OSC 3 · Detune", "OSC 3 · Pan", "OSC 3 · Level", "Master · Volume", "AMP ENV · Attack", "AMP ENV · Decay", "AMP ENV · Sustain", "AMP ENV · Release", "LFO · Rate", "LFO · Phase", "Filter · Cutoff", "Filter · Resonance", "MOD ENV · Attack", "MOD ENV · Decay", "MOD ENV · Sustain", "MOD ENV · Release", "Noise", "OSC 1 · Spread", "OSC 2 · Spread", "OSC 3 · Spread", "OSC 2 · FM", "OSC 3 · FM", "OSC 2 · Ring", "OSC 3 · Ring", "Glide", "OSC 1 · FM", "OSC 1 · Ring"];
+    private property <[string]> destinations: ["OSC 1 · Semitone", "OSC 1 · Fine", "OSC 1 · Phase", "OSC 1 · Phase random", "OSC 1 · Pulse width", "OSC 1 · Unison", "OSC 1 · Detune", "OSC 1 · Pan", "OSC 1 · Level", "OSC 2 · Semitone", "OSC 2 · Fine", "OSC 2 · Phase", "OSC 2 · Phase random", "OSC 2 · Pulse width", "OSC 2 · Unison", "OSC 2 · Detune", "OSC 2 · Pan", "OSC 2 · Level", "OSC 3 · Semitone", "OSC 3 · Fine", "OSC 3 · Phase", "OSC 3 · Phase random", "OSC 3 · Pulse width", "OSC 3 · Unison", "OSC 3 · Detune", "OSC 3 · Pan", "OSC 3 · Level", "Master · Volume", "AMP ENV · Attack", "AMP ENV · Decay", "AMP ENV · Sustain", "AMP ENV · Release", "LFO · Rate", "LFO · Phase", "Filter · Cutoff", "Filter · Resonance", "MOD ENV · Attack", "MOD ENV · Decay", "MOD ENV · Sustain", "MOD ENV · Release", "Noise", "OSC 1 · Spread", "OSC 2 · Spread", "OSC 3 · Spread", "OSC 2 · FM", "OSC 3 · FM", "OSC 2 · Ring", "OSC 3 · Ring", "Glide", "OSC 1 · FM", "OSC 1 · Ring", "OSC 2 · Sync", "OSC 3 · Sync"];
 
     VerticalLayout {
         padding: 10px;

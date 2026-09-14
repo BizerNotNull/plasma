@@ -620,7 +620,9 @@ fn analog_amounts_are_modulation_targets_without_changing_bases() {
     assert_eq!(plasma_kernel::target_range(48).unwrap(), (0.0, 2.0, false));
     assert_eq!(plasma_kernel::target_range(49).unwrap(), (0.0, 1.0, false));
     assert_eq!(plasma_kernel::target_range(50).unwrap(), (0.0, 1.0, false));
-    assert!(plasma_kernel::target_range(51).is_err());
+    assert_eq!(plasma_kernel::target_range(51).unwrap(), (0.0, 1.0, false));
+    assert_eq!(plasma_kernel::target_range(52).unwrap(), (0.0, 1.0, false));
+    assert!(plasma_kernel::target_range(53).is_err());
 
     let mut params = VoiceParams::default();
     params.oscillators[0].level = 0.0;
@@ -986,4 +988,56 @@ fn pitch_bend_scales_an_in_progress_glide() {
     }
     let hz = voice.frequency();
     assert!(hz > 460.0 && hz < 860.0, "bent intermediate pitch {hz}");
+}
+
+#[test]
+fn oscillator_sync_is_a_modulation_target_without_changing_bases() {
+    let mut params = VoiceParams::default();
+    params.oscillators[0].waveform = Waveform::Saw;
+    params.oscillators[0].level = 0.0;
+    params.oscillators[1].waveform = Waveform::Saw;
+    params.oscillators[1].pitch = 7.0;
+    params.oscillators[1].level = 1.0;
+    params.globals[..4].copy_from_slice(&[0.001, 0.001, 1.0, 0.2]);
+    params.globals[6] = 18000.0;
+
+    let mut free = Voice::new(48_000.0, 4).unwrap();
+    let mut routed = Voice::new(48_000.0, 4).unwrap();
+    let mut latched = Voice::new(48_000.0, 4).unwrap();
+    free.set_params(params).unwrap();
+    let mut routed_params = params;
+    routed_params.routes[3][51] = 1.0;
+    routed.set_params(routed_params).unwrap();
+    params.sync[1] = true;
+    latched.set_params(params).unwrap();
+    free.note_on(220.0, 127).unwrap();
+    routed.note_on(220.0, 127).unwrap();
+    latched.note_on(220.0, 127).unwrap();
+    let mut different = false;
+    for _ in 0..2048 {
+        let a = free.next_frame();
+        let b = routed.next_frame();
+        let c = latched.next_frame();
+        assert_eq!(b, c);
+        if a != b {
+            different = true;
+        }
+    }
+    assert!(different);
+    assert!(!routed.params().sync[1]);
+    assert!((routed.telemetry().effective[51] - 1.0).abs() < 1e-6);
+
+    let mut below = Voice::new(48_000.0, 4).unwrap();
+    routed_params.routes[3][51] = 0.4;
+    below.set_params(routed_params).unwrap();
+    below.note_on(220.0, 127).unwrap();
+    let mut free = Voice::new(48_000.0, 4).unwrap();
+    params.sync[1] = false;
+    free.set_params(params).unwrap();
+    free.note_on(220.0, 127).unwrap();
+    for _ in 0..512 {
+        assert_eq!(below.next_frame(), free.next_frame());
+    }
+    assert_eq!(below.telemetry().effective[51], 0.0);
+    assert!(!below.params().sync[1]);
 }

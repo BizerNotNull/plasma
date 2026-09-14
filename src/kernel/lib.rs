@@ -37,7 +37,8 @@
 //! at 36..39. Target 40 is noise; 41..43 are unison spread per oscillator;
 //! 44..45 are FM amounts for oscillators 1 and 2; 46..47 are their ring amounts;
 //! 48 is glide time (0..=2 s). Targets 49 and 50 are oscillator 0's self-FM and
-//! self-ring. Glide is still sampled into an in-progress slide
+//! self-ring. Targets 51 and 52 are hard-sync amounts for oscillators 1 and 2
+//! (threshold 0.5; boolean bases stay unchanged). Glide is still sampled into an in-progress slide
 //! at the overlapping legato trigger, and a modulated zero snaps the remainder.
 //! AMP ENV, LFO, MOD ENV, velocity and key tracking may route
 //! to every target with signed

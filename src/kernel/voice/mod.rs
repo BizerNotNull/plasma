@@ -4,7 +4,7 @@
 //! Base parameters are never overwritten by modulation. Oscillator phase/random
 //! are sampled at the next trigger; unison modulation rounds to whole voices.
 //! White noise is mixed with the oscillator bank before the filter. Unison stereo
-//! spread, FM, ring (including oscillator 0 self-mod), noise and glide amounts are modulation targets; bases stay unchanged.
+//! spread, FM, ring (including oscillator 0 self-mod), noise, glide and oscillator 1/2 hard-sync amounts are modulation targets; bases stay unchanged.
 
 mod envelope;
 mod filter;
@@ -88,9 +88,6 @@ impl Voice {
             self.base = params.normalized();
             self.params = params;
             self.clock = 0;
-            for i in 0..OSCILLATOR_COUNT {
-                self.bank.set_sync(i, params.sync[i])?;
-            }
         }
         Ok(())
     }
@@ -206,6 +203,15 @@ impl Voice {
         for i in 0..OSCILLATOR_COUNT {
             let _ = self.bank.set_fm(i, f64::from(self.telemetry.effective[FM_TARGETS[i]]));
             let _ = self.bank.set_ring(i, f64::from(self.telemetry.effective[RING_TARGETS[i]]));
+            let on = if i == 0 {
+                self.params.sync[0]
+            } else {
+                self.telemetry.effective[50 + i] >= 0.5
+            };
+            let _ = self.bank.set_sync(i, on);
+            if i > 0 {
+                self.telemetry.effective[50 + i] = if on { 1.0 } else { 0.0 };
+            }
         }
         let cutoff = (self.effective_globals[6] as f64).min(self.sample_rate * 0.45);
         self.target_g = (std::f64::consts::PI * cutoff / self.sample_rate).tan();

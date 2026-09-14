@@ -312,6 +312,48 @@ fn oscillator_sync_round_trips_and_changes_rendered_audio() {
 }
 
 #[test]
+fn oscillator_sync_route_changes_rendered_audio_without_changing_base() {
+    let free = Synth::new();
+    let routed = Synth::new();
+    let latched = Synth::new();
+    let mute = OscillatorParams {
+        waveform: Waveform::Saw,
+        level: 0.0,
+        ..Default::default()
+    };
+    let slave = OscillatorParams {
+        waveform: Waveform::Saw,
+        pitch: 7.0,
+        level: 1.0,
+        ..Default::default()
+    };
+    for synth in [&free, &routed, &latched] {
+        synth.set_params(0, mute).unwrap();
+        synth.set_params(1, slave).unwrap();
+    }
+    routed.set_route(51, 3, 1.0).unwrap();
+    latched.set_sync(1, true).unwrap();
+    assert!(!routed.voice_params().unwrap().sync[1]);
+    assert_eq!(routed.voice_params().unwrap().routes[3][51], 1.0);
+
+    free.note_on(60, 127).unwrap();
+    routed.note_on(60, 127).unwrap();
+    latched.note_on(60, 127).unwrap();
+    let mut free_r = AudioRenderer::new(free, 48_000.0, 3).unwrap();
+    let mut routed_r = AudioRenderer::new(routed, 48_000.0, 3).unwrap();
+    let mut latched_r = AudioRenderer::new(latched, 48_000.0, 3).unwrap();
+    let mut a = [0.0_f32; 2048];
+    let mut b = [0.0_f32; 2048];
+    let mut c = [0.0_f32; 2048];
+    free_r.render_interleaved(&mut a, 2);
+    routed_r.render_interleaved(&mut b, 2);
+    latched_r.render_interleaved(&mut c, 2);
+    assert_ne!(a, b);
+    assert_eq!(b, c);
+    assert!(b.iter().all(|s| s.is_finite()));
+}
+
+#[test]
 fn oscillator_fm_round_trips_and_changes_rendered_audio() {
     let free = Synth::new();
     let fm = Synth::new();
@@ -498,7 +540,7 @@ fn analog_amount_routes_change_rendered_audio_without_changing_bases() {
     dry.set_params(0, mute).unwrap();
     wet.set_params(0, mute).unwrap();
     wet.set_route(40, 3, 1.0).unwrap();
-    assert!(wet.set_route(51, 3, 1.0).is_err());
+    assert!(wet.set_route(53, 3, 1.0).is_err());
     assert_eq!(wet.voice_params().unwrap().noise, 0.0);
     assert_eq!(wet.voice_params().unwrap().routes[3][40], 1.0);
 
