@@ -27,7 +27,8 @@
 //!
 //! [`Voice`] wraps the unchanged oscillator bank with independent AMP and MOD
 //! ADSRs, a free or retriggered LFO, a stereo state-variable filter
-//! (lowpass/bandpass/highpass) and a modulation matrix.
+//! (lowpass/bandpass/highpass), a white-noise mixer into that filter
+//! and a modulation matrix.
 //! Targets 0..27 are the nine oscillator knobs per oscillator (pitch, fine,
 //! phase, random phase, pulse width, unison, detune, pan, level); 27 is master
 //! gain and 28..40 are the twelve [`VoiceParams::globals`] controls, with MOD ADSR

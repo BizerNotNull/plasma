@@ -489,3 +489,88 @@ fn oscillator_ring_from_silent_master_changes_audio() {
     }
     assert!(different);
 }
+
+#[test]
+fn zero_noise_matches_default_oscillator_audio() {
+    let mut plain = Voice::new(48000.0, 17).unwrap();
+    let mut zero = Voice::new(48000.0, 17).unwrap();
+    let mut params = VoiceParams::default();
+    params.oscillators[0].waveform = Waveform::Saw;
+    params.globals[..4].copy_from_slice(&[0.001, 0.001, 1.0, 0.2]);
+    plain.set_params(params).unwrap();
+    params.noise = 0.0;
+    zero.set_params(params).unwrap();
+    plain.note_on(220.0, 127).unwrap();
+    zero.note_on(220.0, 127).unwrap();
+    for _ in 0..2048 {
+        assert_eq!(plain.next_frame(), zero.next_frame());
+    }
+}
+
+#[test]
+fn white_noise_mixer_is_silent_at_zero_and_audible_when_oscillators_are_muted() {
+    let mut silent = Voice::new(48000.0, 13).unwrap();
+    let mut noisy = Voice::new(48000.0, 13).unwrap();
+    let mut params = VoiceParams::default();
+    params.oscillators[0].level = 0.0;
+    params.globals[..4].copy_from_slice(&[0.001, 0.001, 1.0, 0.2]);
+    params.globals[6] = 18000.0;
+    silent.set_params(params).unwrap();
+    params.noise = 0.8;
+    noisy.set_params(params).unwrap();
+    params.noise = 1.1;
+    assert!(noisy.set_params(params).is_err());
+    assert_eq!(noisy.params().noise, 0.8);
+    params.noise = f32::NAN;
+    assert!(noisy.set_params(params).is_err());
+    silent.note_on(220.0, 127).unwrap();
+    noisy.note_on(220.0, 127).unwrap();
+    let mut silent_energy = 0.0;
+    let mut noisy_energy = 0.0;
+    let mut peak = 0.0_f32;
+    for _ in 0..4800 {
+        let a = silent.next_frame();
+        let b = noisy.next_frame();
+        assert!(b.iter().all(|s| s.is_finite() && s.abs() <= 1.0));
+        silent_energy += (a[0] as f64).powi(2);
+        noisy_energy += (b[0] as f64).powi(2);
+        peak = peak.max(b[0].abs());
+        assert_eq!(b[0], b[1]);
+    }
+    assert!(silent_energy < 1e-12);
+    assert!(noisy_energy > 0.01);
+    assert!(peak > 0.01);
+}
+
+#[test]
+fn white_noise_is_deterministic_per_seed_and_reaches_the_filter() {
+    fn render(seed: u64, mode: FilterMode) -> Vec<f32> {
+        let mut voice = Voice::new(48000.0, seed).unwrap();
+        let mut p = VoiceParams::default();
+        p.oscillators[0].level = 0.0;
+        p.noise = 1.0;
+        p.filter_mode = mode;
+        p.globals[..4].copy_from_slice(&[0.001, 0.001, 1.0, 0.2]);
+        p.globals[6] = 400.0;
+        p.globals[7] = 0.1;
+        voice.set_params(p).unwrap();
+        voice.note_on(440.0, 127).unwrap();
+        (0..4096).map(|_| voice.next_frame()[0]).collect()
+    }
+    let lp = render(7, FilterMode::Lowpass);
+    assert_eq!(lp, render(7, FilterMode::Lowpass));
+    assert_ne!(lp, render(8, FilterMode::Lowpass));
+    let hp = render(7, FilterMode::Highpass);
+    assert_ne!(lp, hp);
+    let bass = |frames: &[f32]| {
+        let mut s = 0.0;
+        let mut e = 0.0;
+        let a = 1.0 - (-std::f64::consts::TAU * 120.0 / 48000.0).exp();
+        for &x in frames {
+            s += a * (f64::from(x) - s);
+            e += s * s;
+        }
+        e / frames.len() as f64
+    };
+    assert!(bass(&hp) < bass(&lp));
+}

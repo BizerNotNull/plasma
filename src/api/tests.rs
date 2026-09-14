@@ -367,3 +367,34 @@ fn oscillator_ring_round_trips_and_changes_rendered_audio() {
     assert_ne!(a, b);
     assert!(b.iter().all(|s| s.is_finite()));
 }
+
+#[test]
+fn set_noise_round_trips_and_changes_rendered_audio() {
+    let silent = Synth::new();
+    let noisy = Synth::new();
+    let mute = OscillatorParams {
+        level: 0.0,
+        ..Default::default()
+    };
+    silent.set_params(0, mute).unwrap();
+    noisy.set_params(0, mute).unwrap();
+    noisy.set_noise(0.8).unwrap();
+    assert_eq!(noisy.voice_params().unwrap().noise, 0.8);
+    assert_eq!(silent.voice_params().unwrap().noise, 0.0);
+    assert!(noisy.set_noise(-0.1).is_err());
+    assert!(noisy.set_noise(1.1).is_err());
+    assert!(noisy.set_noise(f32::NAN).is_err());
+    assert_eq!(noisy.voice_params().unwrap().noise, 0.8);
+
+    silent.note_on(60, 127).unwrap();
+    noisy.note_on(60, 127).unwrap();
+    let mut silent_r = AudioRenderer::new(silent, 48_000.0, 5).unwrap();
+    let mut noisy_r = AudioRenderer::new(noisy, 48_000.0, 5).unwrap();
+    let mut a = [0.0_f32; 4096];
+    let mut b = [0.0_f32; 4096];
+    silent_r.render_interleaved(&mut a, 2);
+    noisy_r.render_interleaved(&mut b, 2);
+    assert_ne!(a, b);
+    assert!(b.iter().all(|s| s.is_finite()));
+    assert!(b.iter().any(|s| *s != 0.0));
+}

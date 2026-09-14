@@ -62,6 +62,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     window.set_filter_mode(0);
     window.set_glide(params.glide);
     window.set_legato(params.legato);
+    window.set_noise(params.noise * 100.0);
     window.on_global_edited({
         let weak = window.as_weak();
         let synth = synth.clone();
@@ -175,6 +176,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let Some(window) = weak.upgrade() else { return };
             if show_result(&window, synth.set_legato(legato)) {
                 window.set_legato(legato);
+            }
+        }
+    });
+    window.on_noise_edited({
+        let weak = window.as_weak();
+        let synth = synth.clone();
+        move |percent| {
+            let Some(window) = weak.upgrade() else { return };
+            if show_result(&window, synth.set_noise(percent / 100.0)) {
+                window.set_noise(percent);
             }
         }
     });

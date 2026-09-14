@@ -107,6 +107,14 @@ impl Synth {
         })
     }
 
+    /// White noise mixed into the filter, 0..=1. Independent of oscillator levels.
+    pub fn set_noise(&self, amount: f32) -> Result<(), Error> {
+        self.update(|c| {
+            c.params.noise = amount;
+            Ok(())
+        })
+    }
+
     /// Hard-sync this oscillator to oscillator 0. Index 0 is stored but ignored.
     pub fn set_sync(&self, index: usize, sync: bool) -> Result<(), Error> {
         self.update(|c| {

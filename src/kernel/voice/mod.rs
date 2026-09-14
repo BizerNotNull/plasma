@@ -3,6 +3,7 @@
 //! Velocity and key tracking are per-note constants, retained through release.
 //! Base parameters are never overwritten by modulation. Oscillator phase/random
 //! are sampled at the next trigger; unison modulation rounds to whole voices.
+//! White noise is mixed with the oscillator bank before the filter.
 
 mod envelope;
 mod filter;
@@ -13,7 +14,7 @@ pub use params::{
     VoiceParams, denormalize, normalize, target_range,
 };
 
-use crate::{Error, OSCILLATOR_COUNT, OscillatorBank};
+use crate::{Error, OSCILLATOR_COUNT, OscillatorBank, dsp};
 use envelope::Envelope;
 use filter::Lowpass;
 
@@ -39,6 +40,7 @@ pub struct Voice {
     current_hz: f64,
     target_hz: f64,
     glide_remaining: f64,
+    noise: dsp::Random,
 }
 
 impl Voice {
@@ -67,6 +69,7 @@ impl Voice {
             current_hz: 0.0,
             target_hz: 0.0,
             glide_remaining: 0.0,
+            noise: dsp::Random::new(seed ^ 0xD1B54A32D192ED03),
         };
         voice.control_tick();
         voice.g = voice.target_g;
@@ -300,9 +303,18 @@ impl Voice {
             return [0.0; 2];
         }
         let frame = self.bank.next_frame();
+        let noise = if self.params.noise > 0.0 {
+            (2.0 * self.noise.unit() - 1.0) * f64::from(self.params.noise)
+        } else {
+            0.0
+        };
         std::array::from_fn(|i| {
-            (self.filters[i].next(frame[i] as f64, self.g, self.k, self.params.filter_mode)
-                * self.gain
+            (self.filters[i].next(
+                frame[i] as f64 + noise,
+                self.g,
+                self.k,
+                self.params.filter_mode,
+            ) * self.gain
                 * self.telemetry.env as f64) as f32
         })
     }

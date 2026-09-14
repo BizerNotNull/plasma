@@ -211,6 +211,7 @@ export component MainWindow inherits Window {
     in property <int> filter-mode: 0;
     in property <float> glide: 0;
     in property <bool> legato: false;
+    in property <float> noise: 0;
     in property <[float]> env-depths <=> Modulation.env-depths;
     in property <[float]> lfo-depths <=> Modulation.lfo-depths;
     in property <[float]> mod-env-depths <=> Modulation.mod-env-depths;
@@ -232,6 +233,7 @@ export component MainWindow inherits Window {
     callback filter-mode-edited(int);
     callback glide-edited(float);
     callback legato-edited(bool);
+    callback noise-edited(float);
     private property <[string]> destinations: ["OSC 1 · Semitone", "OSC 1 · Fine", "OSC 1 · Phase", "OSC 1 · Phase random", "OSC 1 · Pulse width", "OSC 1 · Unison", "OSC 1 · Detune", "OSC 1 · Pan", "OSC 1 · Level", "OSC 2 · Semitone", "OSC 2 · Fine", "OSC 2 · Phase", "OSC 2 · Phase random", "OSC 2 · Pulse width", "OSC 2 · Unison", "OSC 2 · Detune", "OSC 2 · Pan", "OSC 2 · Level", "OSC 3 · Semitone", "OSC 3 · Fine", "OSC 3 · Phase", "OSC 3 · Phase random", "OSC 3 · Pulse width", "OSC 3 · Unison", "OSC 3 · Detune", "OSC 3 · Pan", "OSC 3 · Level", "Master · Volume", "AMP ENV · Attack", "AMP ENV · Decay", "AMP ENV · Sustain", "AMP ENV · Release", "LFO · Rate", "LFO · Phase", "Filter · Cutoff", "Filter · Resonance", "MOD ENV · Attack", "MOD ENV · Decay", "MOD ENV · Sustain", "MOD ENV · Release"];
 
     VerticalLayout {
@@ -284,7 +286,11 @@ export component MainWindow inherits Window {
                                 Knob { target: 35; label: "RESONANCE"; maximum: 1; default-value: 0.1; value: root.globals[7]; edited(v) => { root.global-edited(7, v); } }
                             }
                             Rectangle { height: 1px; background: #414b54; }
-                            Knob { target: 27; label: "MASTER"; unit: "%"; default-value: 25; value: root.volume; edited(v) => { root.volume-edited(v); } }
+                            HorizontalLayout {
+                                spacing: 4px;
+                                Knob { target: 27; label: "MASTER"; unit: "%"; default-value: 25; value: root.volume; edited(v) => { root.volume-edited(v); } }
+                                Knob { label: "NOISE"; unit: "%"; value: root.noise; edited(v) => { root.noise-edited(v); } }
+                            }
                             HorizontalLayout {
                                 spacing: 4px;
                                 Knob { label: "GLIDE"; unit: " s"; maximum: 2; value: root.glide; edited(v) => { root.glide-edited(v); } }
@@ -293,7 +299,7 @@ export component MainWindow inherits Window {
                                     Action { text: root.legato ? "LEGATO: ON" : "LEGATO: OFF"; accent: #abc7df; selected: root.legato; activated => { root.legato-edited(!root.legato); } }
                                 }
                             }
-                            Text { text: "OSC MIX → FILTER → AMP\nAMP ENV shapes amplitude.\nMOD ENV is freely assignable."; color: #90a2ae; font-size: 10px; wrap: word-wrap; }
+                            Text { text: "OSC MIX + NOISE → FILTER → AMP\nAMP ENV shapes amplitude.\nMOD ENV is freely assignable."; color: #90a2ae; font-size: 10px; wrap: word-wrap; }
                         }
                     }
                 }

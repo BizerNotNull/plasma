@@ -84,6 +84,8 @@ pub struct VoiceParams {
     pub glide: f32,
     /// Overlapping notes slide on one voice instead of stacking.
     pub legato: bool,
+    /// White noise mixed into the filter, 0..=1. Independent of oscillator levels.
+    pub noise: f32,
     /// Hard-sync each oscillator to oscillator 0's first unison wrap. Index 0 is ignored.
     pub sync: [bool; OSCILLATOR_COUNT],
     /// Linear FM from oscillator 0, 0..=1 (index 0..=8). Index 0 is ignored.
@@ -110,6 +112,7 @@ impl Default for VoiceParams {
             filter_mode: FilterMode::Lowpass,
             glide: 0.0,
             legato: false,
+            noise: 0.0,
             sync: [false; OSCILLATOR_COUNT],
             fm: [0.0; OSCILLATOR_COUNT],
             ring: [0.0; OSCILLATOR_COUNT],
@@ -144,6 +147,9 @@ impl VoiceParams {
             if !amount.is_finite() || !(0.0..=1.0).contains(&amount) {
                 return Err(Error::InvalidParameter("ring"));
             }
+        }
+        if !self.noise.is_finite() || !(0.0..=1.0).contains(&self.noise) {
+            return Err(Error::InvalidParameter("noise"));
         }
         Ok(())
     }
