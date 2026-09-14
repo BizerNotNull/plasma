@@ -3,7 +3,7 @@ use crate::{MainWindow, OscillatorState};
 use plasma_api::{OscillatorParams, Synth, Waveform};
 use slint::{Model, VecModel};
 
-pub fn oscillator_state(params: OscillatorParams, sync: bool) -> OscillatorState {
+pub fn oscillator_state(params: OscillatorParams, sync: bool, fm: f32) -> OscillatorState {
     OscillatorState {
         waveform: match params.waveform {
             Waveform::Sine => 0,
@@ -21,6 +21,7 @@ pub fn oscillator_state(params: OscillatorParams, sync: bool) -> OscillatorState
         pan: (params.pan * 100.0) as f32,
         level: (params.level * 100.0) as f32,
         sync,
+        fm: fm * 100.0,
     }
 }
 
@@ -30,6 +31,9 @@ pub fn edit_parameter(synth: &Synth, index: usize, field: i32, value: f32) -> Re
     }
     if field == 10 {
         return Ok(synth.set_sync(index, value != 0.0)?);
+    }
+    if field == 11 {
+        return Ok(synth.set_fm(index, value / 100.0)?);
     }
     let mut params = synth.params(index)?;
     let value = f64::from(value);

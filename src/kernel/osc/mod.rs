@@ -1,5 +1,6 @@
 //! One oscillator with up to four symmetrically detuned unison voices.
-//! Oscillators 1 and 2 may hard-sync to oscillator 0's first unison wrap.
+//! Oscillators 1 and 2 may hard-sync to oscillator 0's first unison wrap, and
+//! may be linearly frequency-modulated by oscillator 0's first-unison waveform.
 
 use crate::{Error, dsp};
 
@@ -89,6 +90,8 @@ pub(crate) struct Oscillator {
     gains: [f64; 2],
     wrapped: bool,
     sync: bool,
+    fm: f64,
+    modulator: f64,
 }
 
 impl Oscillator {
@@ -100,6 +103,8 @@ impl Oscillator {
             gains: [0.0; 2],
             wrapped: false,
             sync: false,
+            fm: 0.0,
+            modulator: 0.0,
         }
     }
 
@@ -140,23 +145,43 @@ impl Oscillator {
         self.phases = [0.0; MAX_UNISON];
     }
 
-    pub(crate) fn next(&mut self) -> [f64; 2] {
+    pub(crate) fn next(&mut self, fm_mod: f64) -> [f64; 2] {
         let mut mono = 0.0;
         self.wrapped = false;
+        self.modulator = 0.0;
+        let fm = if self.fm > 0.0 {
+            8.0 * self.fm * fm_mod
+        } else {
+            0.0
+        };
         for i in 0..usize::from(self.params.unison) {
             let step = self.steps[i];
             if step == 0.0 {
                 continue;
             }
-            mono += dsp::waveform(
-                self.params.waveform,
-                self.phases[i],
-                step,
-                self.params.pulse_width,
-            );
-            self.phases[i] += step;
-            if self.phases[i] >= 1.0 {
-                self.phases[i] -= 1.0;
+            let inc = if fm == 0.0 { step } else { step * (1.0 + fm) };
+            if inc != 0.0 && inc.abs() < 0.5 {
+                let sample = dsp::waveform(
+                    self.params.waveform,
+                    self.phases[i],
+                    inc.abs(),
+                    self.params.pulse_width,
+                );
+                if i == 0 {
+                    self.modulator = sample;
+                }
+                mono += sample;
+            }
+            self.phases[i] += inc;
+            if fm == 0.0 {
+                if self.phases[i] >= 1.0 {
+                    self.phases[i] -= 1.0;
+                    if i == 0 {
+                        self.wrapped = true;
+                    }
+                }
+            } else if self.phases[i] >= 1.0 || self.phases[i] < 0.0 {
+                self.phases[i] = self.phases[i].rem_euclid(1.0);
                 if i == 0 {
                     self.wrapped = true;
                 }

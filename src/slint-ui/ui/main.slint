@@ -14,6 +14,7 @@ export struct OscillatorState {
     pan: float,
     level: float,
     sync: bool,
+    fm: float,
 }
 
 // Controlled input: gestures emit edits without severing backend value bindings.
@@ -104,6 +105,7 @@ component OscillatorCard inherits Panel {
         padding: 9px;
         spacing: 6px;
         HorizontalLayout {
+            spacing: 6px;
             Text { text: "OSC 0\{root.number}"; color: #e6edf2; font-size: 15px; font-weight: 700; }
             Text { text: "ANALOG"; color: #a4b777; font-size: 9px; horizontal-alignment: right; vertical-alignment: center; }
             if root.number > 1: Action {
@@ -134,7 +136,8 @@ component OscillatorCard inherits Panel {
             Knob { row: 2; col: 1; target: (root.number - 1) * 9 + 6; label: "DETUNE"; unit: " ct"; value: root.state.detune; edited(v) => { root.edited(7, v); } }
             Knob { row: 2; col: 2; target: (root.number - 1) * 9 + 8; label: "LEVEL"; unit: "%"; default-value: 100; value: root.state.level; edited(v) => { root.edited(9, v); } }
         }
-        Text { text: "Phase / rand: next note · Unison: whole voices · Sync: OSC 1 wrap"; color: #91a0ac; font-size: 9px; }
+        Text { text: "Phase / rand: next note · Unison: whole voices · Sync: OSC 1 wrap · FM: OSC 1 audio-rate"; color: #91a0ac; font-size: 9px; }
+        if root.number > 1: Knob { label: "FM OSC 1"; unit: "%"; value: root.state.fm; edited(v) => { root.edited(11, v); } }
     }
 }
 

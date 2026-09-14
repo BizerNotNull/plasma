@@ -227,3 +227,224 @@ fn oscillator_zero_sync_flag_does_not_change_audio() {
         assert_eq!(synced.next_frame(), free.next_frame());
     }
 }
+
+fn fm_bank(modulator_level: f64, fm: f64) -> OscillatorBank {
+    let mut bank = OscillatorBank::new(48_000.0, 3).unwrap();
+    bank.set_params(
+        0,
+        OscillatorParams {
+            waveform: Waveform::Sine,
+            level: modulator_level,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    bank.set_params(
+        1,
+        OscillatorParams {
+            waveform: Waveform::Sine,
+            pitch: 19.0,
+            level: 1.0,
+            pan: -1.0,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    bank.set_params(
+        2,
+        OscillatorParams {
+            level: 0.0,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    bank.set_fm(1, fm).unwrap();
+    bank.note_on(110.0).unwrap();
+    bank
+}
+
+#[test]
+fn zero_fm_matches_unmodulated_audio() {
+    let mut free = OscillatorBank::new(48_000.0, 3).unwrap();
+    free.set_params(
+        0,
+        OscillatorParams {
+            waveform: Waveform::Sine,
+            level: 1.0,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    free.set_params(
+        1,
+        OscillatorParams {
+            waveform: Waveform::Sine,
+            pitch: 19.0,
+            level: 1.0,
+            pan: -1.0,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    free.set_params(
+        2,
+        OscillatorParams {
+            level: 0.0,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    free.note_on(110.0).unwrap();
+    let mut zero = fm_bank(1.0, 0.0);
+    for _ in 0..1024 {
+        assert_eq!(free.next_frame(), zero.next_frame());
+    }
+}
+
+#[test]
+fn oscillator_zero_fm_does_not_change_audio() {
+    let mut carrier = fm_bank(0.0, 0.0);
+    let mut ignored = fm_bank(0.0, 0.0);
+    ignored.set_fm(0, 1.0).unwrap();
+    for _ in 0..1024 {
+        assert_eq!(carrier.next_frame(), ignored.next_frame());
+    }
+}
+
+#[test]
+fn silent_modulator_still_frequency_modulates() {
+    let mut free = fm_bank(0.0, 0.0);
+    let mut fm = fm_bank(0.0, 1.0);
+    let mut different = false;
+    for _ in 0..2048 {
+        let a = free.next_frame();
+        let b = fm.next_frame();
+        assert!(b.iter().all(|s| s.is_finite()));
+        if a != b {
+            different = true;
+        }
+    }
+    assert!(different, "silent OSC 1 must still FM OSC 2");
+}
+
+#[test]
+fn fm_changes_audio_and_rejects_invalid_amounts() {
+    let mut source = fm_bank(1.0, 0.5);
+    let mut reference = fm_bank(1.0, 0.5);
+    for amount in [f64::NAN, f64::INFINITY, -0.01, 1.01] {
+        assert!(source.set_fm(1, amount).is_err());
+    }
+    assert!(source.set_fm(3, 0.5).is_err());
+    for _ in 0..256 {
+        assert_eq!(source.next_frame(), reference.next_frame());
+    }
+    let mut free = fm_bank(1.0, 0.0);
+    let mut modulated = fm_bank(1.0, 0.5);
+    let mut different = false;
+    for _ in 0..2048 {
+        if free.next_frame() != modulated.next_frame() {
+            different = true;
+        }
+    }
+    assert!(different);
+}
+
+#[test]
+fn through_zero_fm_reverses_carrier_phase() {
+    fn carrier(fm: f64, modulator_phase: f64) -> OscillatorBank {
+        let mut bank = OscillatorBank::new(48_000.0, 3).unwrap();
+        bank.set_params(
+            0,
+            OscillatorParams {
+                waveform: Waveform::Sine,
+                phase: modulator_phase,
+                level: 0.0,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        bank.set_params(
+            1,
+            OscillatorParams {
+                waveform: Waveform::Sine,
+                pitch: 36.0,
+                level: 1.0,
+                pan: -1.0,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        bank.set_params(
+            2,
+            OscillatorParams {
+                level: 0.0,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        bank.set_fm(1, fm).unwrap();
+        bank.note_on(1.0).unwrap();
+        bank
+    }
+    let mut free = carrier(0.0, 0.75);
+    let mut reversed = carrier(1.0, 0.75);
+    let mut same = carrier(1.0, 0.25);
+    assert_eq!(free.next_frame()[0], 0.0);
+    assert_eq!(reversed.next_frame()[0], 0.0);
+    assert_eq!(same.next_frame()[0], 0.0);
+    let free_s = free.next_frame()[0];
+    let reversed_s = reversed.next_frame()[0];
+    let same_s = same.next_frame()[0];
+    assert!(free_s > 0.0, "unmodulated sine must start forward, got {free_s}");
+    assert!(
+        reversed_s < 0.0,
+        "modulator at -1 must reverse phase, got {reversed_s}"
+    );
+    assert!(same_s > 0.0, "modulator at +1 must stay forward, got {same_s}");
+}
+
+#[test]
+fn oscillator_two_takes_fm_from_oscillator_zero() {
+    let mut free = OscillatorBank::new(48_000.0, 3).unwrap();
+    let mut fm = OscillatorBank::new(48_000.0, 3).unwrap();
+    for bank in [&mut free, &mut fm] {
+        bank.set_params(
+            0,
+            OscillatorParams {
+                waveform: Waveform::Sine,
+                level: 0.0,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        bank.set_params(
+            1,
+            OscillatorParams {
+                level: 0.0,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        bank.set_params(
+            2,
+            OscillatorParams {
+                waveform: Waveform::Sine,
+                pitch: 19.0,
+                level: 1.0,
+                pan: -1.0,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    }
+    fm.set_fm(2, 1.0).unwrap();
+    free.note_on(110.0).unwrap();
+    fm.note_on(110.0).unwrap();
+    let mut different = false;
+    for _ in 0..2048 {
+        if free.next_frame() != fm.next_frame() {
+            different = true;
+        }
+    }
+    assert!(different, "OSC 3 must accept FM from OSC 1");
+}

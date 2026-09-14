@@ -86,6 +86,8 @@ pub struct VoiceParams {
     pub legato: bool,
     /// Hard-sync each oscillator to oscillator 0's first unison wrap. Index 0 is ignored.
     pub sync: [bool; OSCILLATOR_COUNT],
+    /// Linear FM from oscillator 0, 0..=1 (index 0..=8). Index 0 is ignored.
+    pub fm: [f32; OSCILLATOR_COUNT],
     /// [source: AMP ENV=0 / LFO=1 / MOD ENV=2 / Velocity=3 / KeyTrack=4][destination].
     /// Zero removes a route. Key tracking is centered on MIDI 60, at 60 semitones
     /// per unit; depths use normalized target travel, not exact cutoff tracking.
@@ -107,6 +109,7 @@ impl Default for VoiceParams {
             glide: 0.0,
             legato: false,
             sync: [false; OSCILLATOR_COUNT],
+            fm: [0.0; OSCILLATOR_COUNT],
             routes: [[0.0; TARGET_COUNT]; SOURCE_COUNT],
         }
     }
@@ -128,6 +131,11 @@ impl VoiceParams {
         }
         if !self.glide.is_finite() || !(0.0..=2.0).contains(&self.glide) {
             return Err(Error::InvalidParameter("glide"));
+        }
+        for amount in self.fm {
+            if !amount.is_finite() || !(0.0..=1.0).contains(&amount) {
+                return Err(Error::InvalidParameter("fm"));
+            }
         }
         Ok(())
     }

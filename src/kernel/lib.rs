@@ -18,7 +18,9 @@
 //! summed without clipping; callers must leave headroom. Saw/Pulse use PolyBLEP;
 //! Triangle is a basic, non-band-limited waveform. Pulse can contain DC at duties
 //! other than 50%. Oscillators 1 and 2 may hard-sync to oscillator 0's first
-//! unison wrap, resetting every unison phase to 0. Parameters are copied in at
+//! unison wrap, resetting every unison phase to 0, and may be linearly
+//! frequency-modulated by oscillator 0's first-unison waveform (amount 0..=1 maps
+//! to index 0..=8, independent of OSC 1 level). Parameters are copied in at
 //! control rate, not shared atomically.
 //!
 //! [`Voice`] wraps the unchanged oscillator bank with independent AMP and MOD
