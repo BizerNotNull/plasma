@@ -1,7 +1,7 @@
 //! Offline by default. Run with --audio to also open the default output device.
 //! CSV quantiles are nearest-rank quantiles of per-operation batch averages,
 //! except creation and audio rows, which time individual operations.
-use plasma_api::{AudioOutput, LfoWave, OscillatorParams, Synth, TARGET_COUNT};
+use plasma_api::{AudioOutput, Error, LfoWave, OscillatorParams, Synth, TARGET_COUNT};
 use std::hint::black_box;
 use std::sync::{
     Arc, Barrier,
@@ -9,6 +9,8 @@ use std::sync::{
 };
 use std::thread;
 use std::time::{Duration, Instant};
+
+type Result<T, E = Box<dyn std::error::Error>> = std::result::Result<T, E>;
 
 const SAMPLES: usize = 1_000;
 const BATCH: usize = 32;
@@ -64,8 +66,8 @@ fn report(name: &str, samples: &mut [f64], errors: usize) {
 fn measure(
     name: &str,
     batch: usize,
-    mut operation: impl FnMut(usize) -> Result<(), String>,
-) -> Result<(), String> {
+    mut operation: impl FnMut(usize) -> Result<(), Error>,
+) -> Result<(), Error> {
     for i in 0..WARMUP {
         operation(i)?;
     }
@@ -83,14 +85,14 @@ fn measure(
 
 // The background worker runs throughout both warmup and sampling; thread setup,
 // synchronization, sample storage and reporting are outside measured intervals.
-fn concurrent(synth: &Synth, data: &[Input; 256], writer: bool) -> Result<(), String> {
+fn concurrent(synth: &Synth, data: &[Input; 256], writer: bool) -> Result<()> {
     let stop = Arc::new(AtomicBool::new(false));
     let ready = Arc::new(Barrier::new(2));
     let worker_synth = synth.clone();
     let worker_stop = stop.clone();
     let worker_ready = ready.clone();
     let worker_data = *data;
-    let worker = thread::spawn(move || -> Result<(), String> {
+    let worker = thread::spawn(move || -> Result<(), Error> {
         let mut index = 0;
         worker_ready.wait();
         while !worker_stop.load(Ordering::Relaxed) {
@@ -118,10 +120,10 @@ fn concurrent(synth: &Synth, data: &[Input; 256], writer: bool) -> Result<(), St
     worker
         .join()
         .map_err(|_| "Concurrent worker panicked".to_owned())??;
-    result
+    Ok(result?)
 }
 
-fn offline() -> Result<(), String> {
+fn offline() -> Result<()> {
     let data = inputs();
     measure("timer_loop_floor", BATCH, |i| {
         black_box(i);
@@ -222,21 +224,21 @@ fn audio_attempt(name: &str, count: usize) -> usize {
     errors
 }
 
-fn main() -> Result<(), String> {
+fn main() -> Result<()> {
     let mut audio = false;
     for argument in std::env::args().skip(1) {
         match argument.as_str() {
             "--audio" => audio = true,
             "--help" | "-h" => {
                 eprintln!(
-                    "Usage: cargo run --release --manifest-path src/api/Cargo.toml --example performance -- [--audio]"
+                    "Usage: cargo run -p plasma-api --release --example performance -- [--audio]"
                 );
                 eprintln!(
                     "Default: offline controls only. --audio: additionally open/close the default output silently (one cold attempt, eight warmed attempts). Any audio failure gives nonzero exit status; success percentiles exclude failed starts and callback errors observed during a 120 ms dwell."
                 );
                 return Ok(());
             }
-            _ => return Err(format!("Unknown argument: {argument}")),
+            _ => return Err(format!("Unknown argument: {argument}").into()),
         }
     }
     eprintln!(
@@ -252,7 +254,8 @@ fn main() -> Result<(), String> {
         if errors != 0 {
             return Err(format!(
                 "{errors} audio attempt(s) failed; see stderr and failed-attempt CSV rows"
-            ));
+            )
+            .into());
         }
     }
     Ok(())

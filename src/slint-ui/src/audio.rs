@@ -1,5 +1,6 @@
 //! The device stream is created, monitored and dropped on its owning thread.
-//! CPAL streams need not be Send; only status strings cross to the UI.
+//! CPAL streams need not be Send; only status values cross to the UI.
+use crate::error::{Error, log_error};
 use plasma_api::{AudioOutput, Synth};
 use std::{
     sync::mpsc::{self, Receiver, Sender},
@@ -7,13 +8,19 @@ use std::{
     time::Duration,
 };
 
+pub enum DeviceEvent {
+    Ready(String),
+    Failed(plasma_api::Error),
+}
+
 pub struct AudioWorker {
-    pub events: Receiver<Result<String, String>>,
+    pub events: Receiver<DeviceEvent>,
     stop: Option<Sender<()>>,
     thread: Option<JoinHandle<()>>,
 }
+
 impl AudioWorker {
-    pub fn start(synth: Synth) -> Result<Self, String> {
+    pub fn start(synth: Synth) -> Result<Self, Error> {
         let (events_tx, events) = mpsc::sync_channel(2);
         let (stop, stopped) = mpsc::channel();
         let thread = thread::Builder::new()
@@ -22,11 +29,14 @@ impl AudioWorker {
                 let output = match AudioOutput::start(synth) {
                     Ok(output) => output,
                     Err(error) => {
-                        let _ = events_tx.send(Err(error));
+                        let _ = events_tx.send(DeviceEvent::Failed(error));
                         return;
                     }
                 };
-                if events_tx.send(Ok(output.description().to_owned())).is_err() {
+                if events_tx
+                    .send(DeviceEvent::Ready(output.description().to_owned()))
+                    .is_err()
+                {
                     return;
                 }
                 loop {
@@ -34,7 +44,7 @@ impl AudioWorker {
                         Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
                         Err(mpsc::RecvTimeoutError::Timeout) => {
                             if let Some(error) = output.error() {
-                                let _ = events_tx.send(Err(error));
+                                let _ = events_tx.send(DeviceEvent::Failed(error));
                                 break;
                             }
                         }
@@ -50,13 +60,14 @@ impl AudioWorker {
         })
     }
 }
+
 impl Drop for AudioWorker {
     fn drop(&mut self) {
         // Disconnect wakes the worker without waiting for its polling interval.
         self.stop.take();
         if let Some(thread) = self.thread.take() {
             if thread.join().is_err() {
-                eprintln!("Audio device worker panicked during shutdown");
+                log_error("audio device worker panicked during shutdown");
             }
         }
     }

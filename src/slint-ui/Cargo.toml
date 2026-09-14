@@ -1,18 +1,15 @@
 [package]
 name = "plasma-ui"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
 rust-version = "1.94"
 build = "build.rs"
 
 [dependencies]
-plasma-api = { path = "../api" }
-slint = "=1.14.1"
+plasma-api.workspace = true
+slint.workspace = true
 
 [build-dependencies]
-slint-build = "=1.14.1"
+slint-build.workspace = true
 
-# Keep assertions and debug symbols, but do not run the renderer/DSP unoptimized.
-# Incremental application builds remain available in the development profile.
-[profile.dev]
-opt-level = 1

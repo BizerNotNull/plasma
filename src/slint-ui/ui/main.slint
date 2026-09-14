@@ -192,6 +192,7 @@ export component MainWindow inherits Window {
     in property <[float]> globals: [0.01, 0.2, 0.7, 0.4, 1, 0, 18000, 0.1, 0.01, 0.2, 0.7, 0.4];
     in property <int> lfo-wave: 0;
     in property <bool> lfo-retrigger: true;
+    in property <int> filter-mode: 0;
     in property <[float]> env-depths <=> Modulation.env-depths;
     in property <[float]> lfo-depths <=> Modulation.lfo-depths;
     in property <[float]> mod-env-depths <=> Modulation.mod-env-depths;
@@ -210,6 +211,7 @@ export component MainWindow inherits Window {
     callback global-edited(int, float);
     callback lfo-wave-edited(int);
     callback lfo-retrigger-edited(bool);
+    callback filter-mode-edited(int);
     private property <[string]> destinations: ["OSC 1 · Semitone", "OSC 1 · Fine", "OSC 1 · Phase", "OSC 1 · Phase random", "OSC 1 · Pulse width", "OSC 1 · Unison", "OSC 1 · Detune", "OSC 1 · Pan", "OSC 1 · Level", "OSC 2 · Semitone", "OSC 2 · Fine", "OSC 2 · Phase", "OSC 2 · Phase random", "OSC 2 · Pulse width", "OSC 2 · Unison", "OSC 2 · Detune", "OSC 2 · Pan", "OSC 2 · Level", "OSC 3 · Semitone", "OSC 3 · Fine", "OSC 3 · Phase", "OSC 3 · Phase random", "OSC 3 · Pulse width", "OSC 3 · Unison", "OSC 3 · Detune", "OSC 3 · Pan", "OSC 3 · Level", "Master · Volume", "AMP ENV · Attack", "AMP ENV · Decay", "AMP ENV · Sustain", "AMP ENV · Release", "LFO · Rate", "LFO · Phase", "Filter · Cutoff", "Filter · Resonance", "MOD ENV · Attack", "MOD ENV · Decay", "MOD ENV · Sustain", "MOD ENV · Release"];
 
     VerticalLayout {
@@ -241,14 +243,20 @@ export component MainWindow inherits Window {
                             Rectangle {
                                 height: 80px; background: #11191f; clip: true;
                                 for line[index] in 7: Rectangle { x: index * parent.width / 6; width: 1px; height: parent.height; background: #223039; }
-                                Text { x: 8px; y: 7px; text: "LOW PASS"; font-size: 9px; color: #7f9bac; }
+                                Text { x: 8px; y: 7px; text: root.filter-mode == 1 ? "BAND PASS" : root.filter-mode == 2 ? "HIGH PASS" : "LOW PASS"; font-size: 9px; color: #7f9bac; }
                                 for sample[index] in 100: Rectangle {
                                     private property <float> f: 20 * pow(1000, index / 99);
-                                    private property <float> response: 1 / sqrt(1 + pow(self.f / max(root.globals[6], 20), 4));
+                                    private property <float> ratio: self.f / max(root.globals[6], 20);
+                                    private property <float> lp: 1 / sqrt(1 + pow(self.ratio, 4));
+                                    private property <float> response: root.filter-mode == 1 ? self.ratio * self.lp : root.filter-mode == 2 ? self.ratio * self.ratio * self.lp : self.lp;
                                     x: index * (parent.width - 2px) / 99;
                                     y: 23px + (1 - self.response) * 45px;
                                     width: parent.width / 99 + 1px; height: 2px; background: #abc7df;
                                 }
+                            }
+                            HorizontalLayout {
+                                spacing: 3px;
+                                for name[index] in ["LP", "BP", "HP"]: Action { text: name; min-width: 35px; accent: #abc7df; selected: root.filter-mode == index; activated => { root.filter-mode-edited(index); } }
                             }
                             HorizontalLayout {
                                 spacing: 4px;

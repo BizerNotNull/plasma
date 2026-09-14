@@ -1,0 +1,22 @@
+[workspace]
+resolver = "3"
+members = ["src/kernel", "src/api", "src/slint-ui", "src/harness"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+
+[workspace.dependencies]
+plasma-kernel = { path = "src/kernel" }
+plasma-api = { path = "src/api" }
+cpal = "0.15.3"
+hound = "3.5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+slint = "=1.14.1"
+slint-build = "=1.14.1"
+
+# Keep assertions and debug symbols, but do not run the renderer/DSP unoptimized.
+[profile.dev]
+opt-level = 1

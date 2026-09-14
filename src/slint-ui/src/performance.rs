@@ -26,7 +26,7 @@ struct Data {
     completed: bool,
 }
 impl Performance {
-    pub fn new() -> Result<Self, String> {
+    pub fn new() -> Result<Self, crate::error::Error> {
         let start = Instant::now();
         let mut enabled = false;
         let mut seconds = 5;
@@ -48,7 +48,7 @@ impl Performance {
                         return Err("Performance duration must be 1..300 seconds".into());
                     }
                 }
-                _ => return Err(format!("Unknown argument: {arg}")),
+                _ => return Err(format!("Unknown argument: {arg}").into()),
             }
         }
         if !enabled && (no_audio || workload != "idle" || seconds != 5) {

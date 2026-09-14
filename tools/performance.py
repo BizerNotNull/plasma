@@ -1,6 +1,6 @@
 """Measure a prebuilt Plasma executable; never include compilation in startup.
 
-Example: python tools/performance.py src/slint-ui/target/release/plasma-ui.exe --output before.json
+Example: python tools/performance.py target/release/plasma-ui.exe --output before.json
 Run again with --baseline before.json --max-regression-percent 20 for a regression gate.
 """
 import argparse

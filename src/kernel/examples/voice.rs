@@ -1,4 +1,4 @@
-//! Run with `cargo run --manifest-path src/kernel/Cargo.toml --example voice`.
+//! Run with `cargo run -p plasma-kernel --example voice`.
 //! Optionally pass a WAV path to retain the rendered modulation/release demo.
 use plasma_kernel::{Voice, VoiceParams, Waveform};
 use std::io::Write;

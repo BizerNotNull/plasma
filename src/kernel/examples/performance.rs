@@ -1,5 +1,5 @@
 //! Reproducible callback-cost benchmark (release mode; no audio device required).
-//! cargo run --release --manifest-path src/kernel/Cargo.toml --example performance
+//! cargo run -p plasma-kernel --release --example performance
 //! Optional: --iterations 512 --batches 3 --warmup 128 --scenario voice_dense
 //! Each batch starts from the same seed/state, then warms up before sampling.
 //! One sample is one render callback, including the named control operation.

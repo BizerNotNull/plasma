@@ -221,3 +221,22 @@ fn performance_routes_change_rendered_audio_and_can_be_removed_live() {
         assert!((energy(&actual) / energy(&dry) - 1.0).abs() < 0.001);
     }
 }
+
+#[test]
+fn set_filter_mode_is_readable_on_voice_params() {
+    let synth = Synth::new();
+    assert_eq!(
+        synth.voice_params().unwrap().filter_mode,
+        FilterMode::Lowpass
+    );
+    synth.set_filter_mode(FilterMode::Highpass).unwrap();
+    assert_eq!(
+        synth.voice_params().unwrap().filter_mode,
+        FilterMode::Highpass
+    );
+    synth.set_filter_mode(FilterMode::Bandpass).unwrap();
+    assert_eq!(
+        synth.voice_params().unwrap().filter_mode,
+        FilterMode::Bandpass
+    );
+}

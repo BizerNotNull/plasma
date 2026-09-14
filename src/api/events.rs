@@ -1,4 +1,5 @@
 use crate::PolySynth;
+use crate::error::Error;
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
@@ -35,14 +36,12 @@ impl Default for NoteQueue {
 }
 
 impl NoteQueue {
-    pub(crate) fn push(&self, note: u8, velocity: u8) -> Result<(), String> {
+    pub(crate) fn push(&self, note: u8, velocity: u8) -> Result<(), Error> {
         let _writer = self.writers.lock().unwrap_or_else(|e| e.into_inner());
         let tail = self.tail.load(Ordering::SeqCst);
         if tail - self.head.load(Ordering::SeqCst) >= CAPACITY as u64 || tail == u64::MAX {
             self.reset_locked();
-            return Err(
-                "Note queue is full; all notes will be released at the next audio buffer".into(),
-            );
+            return Err(Error::QueueFull);
         }
         self.slots[(tail % CAPACITY as u64) as usize].store(
             u32::from(note) | (u32::from(velocity) << 8),
@@ -71,11 +70,11 @@ pub(crate) struct ConsumerLease {
 }
 
 impl ConsumerLease {
-    pub(crate) fn acquire(queue: Arc<NoteQueue>) -> Result<Self, String> {
+    pub(crate) fn acquire(queue: Arc<NoteQueue>) -> Result<Self, Error> {
         queue
             .claimed
             .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-            .map_err(|_| "This Synth already has an audio consumer".to_owned())?;
+            .map_err(|_| Error::ConsumerBusy)?;
         Ok(Self {
             queue,
             reset_version: 0,

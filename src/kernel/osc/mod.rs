@@ -4,6 +4,9 @@ use crate::{Error, dsp};
 
 pub const MAX_UNISON: usize = 4;
 
+mod bank;
+pub use bank::OscillatorBank;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Waveform {
     #[default]

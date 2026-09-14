@@ -1,4 +1,4 @@
-use plasma_kernel::{LfoWave, TARGET_COUNT, Voice, VoiceParams, Waveform};
+use plasma_kernel::{FilterMode, LfoWave, TARGET_COUNT, Voice, VoiceParams, Waveform};
 
 #[test]
 fn release_survives_old_gate_and_retrigger_preserves_envelope_level() {
@@ -317,4 +317,54 @@ fn note_source_phase_routes_are_sampled_by_the_same_trigger() {
             }
         }
     }
+}
+
+#[test]
+fn filter_mode_selects_svf_taps() {
+    assert_eq!(VoiceParams::default().filter_mode, FilterMode::Lowpass);
+
+    fn render(mode: FilterMode, resonance: f32) -> Vec<[f32; 2]> {
+        let mut voice = Voice::new(48000.0, 11).unwrap();
+        let mut p = VoiceParams::default();
+        p.oscillators[0].waveform = Waveform::Saw;
+        p.globals[0] = 0.001;
+        p.globals[2] = 1.0;
+        p.globals[6] = 300.0;
+        p.globals[7] = resonance;
+        p.filter_mode = mode;
+        voice.set_params(p).unwrap();
+        voice.note_on(261.63, 127).unwrap();
+        for _ in 0..4800 {
+            voice.next_frame();
+        }
+        (0..4800).map(|_| voice.next_frame()).collect()
+    }
+
+    fn rms(frames: &[[f32; 2]]) -> f64 {
+        let e: f64 = frames.iter().map(|f| (f[0] as f64).powi(2)).sum();
+        (e / frames.len() as f64).sqrt()
+    }
+
+    fn bass(frames: &[[f32; 2]]) -> f64 {
+        let mut s = 0.0;
+        let mut e = 0.0;
+        let a = 1.0 - (-std::f64::consts::TAU * 120.0 / 48000.0).exp();
+        for f in frames {
+            s += a * (f[0] as f64 - s);
+            e += s * s;
+        }
+        e / frames.len() as f64
+    }
+
+    fn peak(frames: &[[f32; 2]]) -> f32 {
+        frames.iter().map(|f| f[0].abs()).fold(0.0_f32, f32::max)
+    }
+
+    let lp = render(FilterMode::Lowpass, 0.1);
+    let hp = render(FilterMode::Highpass, 0.1);
+    let bp = render(FilterMode::Bandpass, 0.1);
+    let bp_res = render(FilterMode::Bandpass, 0.8);
+    assert!(bass(&hp) < bass(&lp));
+    assert!(rms(&bp) < rms(&lp));
+    assert!(peak(&bp_res) > peak(&bp));
 }

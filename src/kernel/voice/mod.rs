@@ -4,249 +4,19 @@
 //! Base parameters are never overwritten by modulation. Oscillator phase/random
 //! are sampled at the next trigger; unison modulation rounds to whole voices.
 
-use crate::{Error, OSCILLATOR_COUNT, OscillatorBank, OscillatorParams};
+mod envelope;
+mod filter;
+mod params;
 
-pub const TARGET_COUNT: usize = 40;
-pub const GLOBAL_COUNT: usize = 12;
-pub const SOURCE_COUNT: usize = 5;
-pub const GLOBAL_DEFAULTS: [f32; GLOBAL_COUNT] = [
-    0.01, 0.2, 0.7, 0.4, 1.0, 0.0, 18000.0, 0.1, 0.01, 0.2, 0.7, 0.4,
-];
+pub use params::{
+    GLOBAL_COUNT, GLOBAL_DEFAULTS, FilterMode, LfoWave, SOURCE_COUNT, TARGET_COUNT, Telemetry,
+    VoiceParams, denormalize, normalize, target_range,
+};
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum LfoWave {
-    #[default]
-    Sine,
-    Triangle,
-    Saw,
-    Square,
-}
+use crate::{Error, OSCILLATOR_COUNT, OscillatorBank};
+use envelope::Envelope;
+use filter::Lowpass;
 
-/// Target ranges in native units; time, rate and cutoff use logarithmic travel.
-pub fn target_range(target: usize) -> Result<(f32, f32, bool), Error> {
-    let range = match target {
-        0..=26 => match target % 9 {
-            0 => (-48.0, 48.0, false),
-            1 => (-100.0, 100.0, false),
-            2 | 3 | 8 => (0.0, 1.0, false),
-            4 => (0.01, 0.99, false),
-            5 => (1.0, 4.0, false),
-            6 => (0.0, 100.0, false),
-            _ => (-1.0, 1.0, false),
-        },
-        27 | 30 | 33 | 35 | 38 => (0.0, 1.0, false),
-        28 | 29 | 31 | 36 | 37 | 39 => (0.001, 10.0, true),
-        32 => (0.01, 30.0, true),
-        34 => (20.0, 20000.0, true),
-        _ => return Err(Error::InvalidParameter("modulation target")),
-    };
-    Ok(range)
-}
-pub fn normalize(target: usize, value: f32) -> Result<f32, Error> {
-    let (min, max, log) = target_range(target)?;
-    if !value.is_finite() || !(min..=max).contains(&value) {
-        return Err(Error::InvalidParameter("target value"));
-    }
-    Ok((if log {
-        (value / min).ln() / (max / min).ln()
-    } else {
-        (value - min) / (max - min)
-    })
-    .clamp(0.0, 1.0))
-}
-pub fn denormalize(target: usize, value: f32) -> Result<f32, Error> {
-    let (min, max, log) = target_range(target)?;
-    if !value.is_finite() || !(0.0..=1.0).contains(&value) {
-        return Err(Error::InvalidParameter("normalized value"));
-    }
-    Ok((if log {
-        min * (max / min).powf(value)
-    } else {
-        min + (max - min) * value
-    })
-    .clamp(min, max))
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct VoiceParams {
-    pub oscillators: [OscillatorParams; OSCILLATOR_COUNT],
-    pub volume: f32,
-    /// AMP ADSR, LFO Hz/phase, cutoff Hz/resonance, then independent MOD ADSR.
-    pub globals: [f32; GLOBAL_COUNT],
-    pub lfo_wave: LfoWave,
-    pub lfo_retrigger: bool,
-    /// [source: AMP ENV=0 / LFO=1 / MOD ENV=2 / Velocity=3 / KeyTrack=4][destination].
-    /// Zero removes a route. Key tracking is centered on MIDI 60, at 60 semitones
-    /// per unit; depths use normalized target travel, not exact cutoff tracking.
-    pub routes: [[f32; TARGET_COUNT]; SOURCE_COUNT],
-}
-impl Default for VoiceParams {
-    fn default() -> Self {
-        Self {
-            oscillators: std::array::from_fn(|i| OscillatorParams {
-                level: if i == 0 { 1.0 } else { 0.0 },
-                ..Default::default()
-            }),
-            volume: 0.25,
-            globals: GLOBAL_DEFAULTS,
-            lfo_wave: LfoWave::Sine,
-            lfo_retrigger: true,
-            routes: [[0.0; TARGET_COUNT]; SOURCE_COUNT],
-        }
-    }
-}
-impl VoiceParams {
-    pub fn validate(&self) -> Result<(), Error> {
-        for p in &self.oscillators {
-            p.validate()?;
-        }
-        normalize(27, self.volume)?;
-        for (i, v) in self.globals.iter().enumerate() {
-            normalize(28 + i, *v)?;
-        }
-        for depth in self.routes.iter().flatten() {
-            if !depth.is_finite() || !(-1.0..=1.0).contains(depth) {
-                return Err(Error::InvalidParameter("route depth"));
-            }
-        }
-        Ok(())
-    }
-    pub fn normalized(&self) -> [f32; TARGET_COUNT] {
-        let mut values = [0.0; TARGET_COUNT];
-        for (i, p) in self.oscillators.iter().enumerate() {
-            let native = [
-                p.pitch,
-                p.fine,
-                p.phase,
-                p.phase_random,
-                p.pulse_width,
-                p.unison as f64,
-                p.detune,
-                p.pan,
-                p.level,
-            ];
-            for (f, v) in native.into_iter().enumerate() {
-                values[i * 9 + f] = normalize(i * 9 + f, v as f32).unwrap_or(0.0);
-            }
-        }
-        values[27] = self.volume;
-        for (i, v) in self.globals.iter().enumerate() {
-            values[28 + i] = normalize(28 + i, *v).unwrap_or(0.0);
-        }
-        values
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct Telemetry {
-    pub env: f32,
-    pub lfo: f32,
-    pub mod_env: f32,
-    /// Note velocity / 127; independent of the AMP ENV.
-    pub velocity: f32,
-    /// MIDI note relative to 60, divided by 60 and clamped to [-1, 1].
-    pub key_track: f32,
-    pub effective: [f32; TARGET_COUNT],
-}
-impl Default for Telemetry {
-    fn default() -> Self {
-        Self {
-            env: 0.0,
-            lfo: 0.0,
-            mod_env: 0.0,
-            velocity: 0.0,
-            key_track: 0.0,
-            effective: VoiceParams::default().normalized(),
-        }
-    }
-}
-#[derive(Clone, Copy, PartialEq)]
-enum Stage {
-    Idle,
-    Attack,
-    Decay,
-    Sustain,
-    Release,
-}
-
-struct Envelope {
-    stage: Stage,
-    level: f32,
-    release_start: f32,
-}
-impl Default for Envelope {
-    fn default() -> Self {
-        Self {
-            stage: Stage::Idle,
-            level: 0.0,
-            release_start: 0.0,
-        }
-    }
-}
-impl Envelope {
-    fn note_on(&mut self) {
-        self.stage = Stage::Attack;
-    }
-
-    fn note_off(&mut self) {
-        if self.stage != Stage::Idle && self.stage != Stage::Release {
-            self.release_start = self.level;
-            self.stage = Stage::Release;
-        }
-    }
-
-    fn next(&mut self, adsr: [f32; 4], sample_rate: f32, smooth: f32) -> f32 {
-        let [attack, decay, sustain, release] = adsr;
-        let env = &mut self.level;
-        match self.stage {
-            Stage::Idle => *env = 0.0,
-            Stage::Attack => {
-                *env = (*env + 1.0 / (attack * sample_rate)).min(1.0);
-                if *env >= 1.0 {
-                    self.stage = Stage::Decay;
-                }
-            }
-            Stage::Decay => {
-                *env = (*env - (1.0 - sustain) / (decay * sample_rate)).max(sustain);
-                if *env <= sustain {
-                    self.stage = Stage::Sustain;
-                }
-            }
-            Stage::Sustain => {
-                *env += (sustain - *env) * smooth;
-            }
-            Stage::Release => {
-                *env = (*env - self.release_start / (release * sample_rate)).max(0.0);
-                if *env <= 0.0 {
-                    self.stage = Stage::Idle;
-                }
-            }
-        }
-        *env
-    }
-}
-#[derive(Default)]
-struct Lowpass {
-    s1: f64,
-    s2: f64,
-}
-impl Lowpass {
-    // Topology-preserving state-variable filter: stable through cutoff sweeps.
-    fn next(&mut self, input: f64, g: f64, k: f64) -> f64 {
-        let a = 1.0 / (1.0 + g * (g + k));
-        let v1 = a * (self.s1 + g * (input - self.s2));
-        let v2 = self.s2 + g * v1;
-        self.s1 = 2.0 * v1 - self.s1;
-        self.s2 = 2.0 * v2 - self.s2;
-        if self.s1.abs() < 1e-24 {
-            self.s1 = 0.0;
-        }
-        if self.s2.abs() < 1e-24 {
-            self.s2 = 0.0;
-        }
-        v2
-    }
-}
 pub struct Voice {
     bank: OscillatorBank,
     params: VoiceParams,
@@ -267,6 +37,7 @@ pub struct Voice {
     target_k: f64,
     smooth: f64,
 }
+
 impl Voice {
     pub fn new(sample_rate: f64, seed: u64) -> Result<Self, Error> {
         let bank = OscillatorBank::new(sample_rate, seed)?;
@@ -296,9 +67,11 @@ impl Voice {
         voice.k = voice.target_k;
         Ok(voice)
     }
+
     pub fn params(&self) -> &VoiceParams {
         &self.params
     }
+
     pub fn set_params(&mut self, params: VoiceParams) -> Result<(), Error> {
         params.validate()?;
         if params != self.params {
@@ -308,6 +81,7 @@ impl Voice {
         }
         Ok(())
     }
+
     /// Retriggers both envelopes from their current levels (no discontinuity).
     /// Free LFO keeps its phase; retrigger LFO starts at the effective phase knob.
     /// Velocity must be 0..=127 and affects modulation only, not amplitude.
@@ -337,17 +111,21 @@ impl Voice {
         }
         Ok(())
     }
+
     pub fn note_off(&mut self) {
         self.amp_env.note_off();
         self.mod_env.note_off();
     }
+
     pub fn telemetry(&self) -> Telemetry {
         self.telemetry
     }
+
     /// AMP ENV alone determines silence; MOD ENV cannot prolong allocation.
     pub fn is_silent(&self) -> bool {
-        self.amp_env.stage == Stage::Idle
+        self.amp_env.is_idle()
     }
+
     fn control_tick(&mut self) {
         for i in 0..TARGET_COUNT {
             self.telemetry.effective[i] = (self.base[i]
@@ -385,6 +163,7 @@ impl Voice {
         self.target_g = (std::f64::consts::PI * cutoff / self.sample_rate).tan();
         self.target_k = 2.0 - 1.9 * self.effective_globals[7] as f64;
     }
+
     /// Clears the previous note's envelopes, note sources and filter when a
     /// polyphonic slot is reassigned. Free LFO and smoothed controls stay continuous.
     pub(crate) fn reset_note(&mut self) {
@@ -458,11 +237,12 @@ impl Voice {
         }
         let frame = self.bank.next_frame();
         std::array::from_fn(|i| {
-            (self.filters[i].next(frame[i] as f64, self.g, self.k)
+            (self.filters[i].next(frame[i] as f64, self.g, self.k, self.params.filter_mode)
                 * self.gain
                 * self.telemetry.env as f64) as f32
         })
     }
+
     pub fn render(&mut self, output: &mut [[f32; 2]]) {
         for frame in output {
             *frame = self.next_frame();

@@ -160,13 +160,13 @@ def main():
         and urllib.parse.urlsplit(url).hostname not in {"localhost", "127.0.0.1", "::1"}
     ):
         parser.error(f"set {args.api_key_env} for the remote provider")
-    renderer = args.renderer or ROOT / "src/harness/target/release" / (
+    renderer = args.renderer or ROOT / "target/release" / (
         "plasma-render.exe" if os.name == "nt" else "plasma-render"
     )
     renderer = renderer.resolve()
     if not renderer.is_file():
         parser.error(
-            "renderer missing; run cargo build --release --manifest-path src/harness/Cargo.toml"
+            "renderer missing; run cargo build --release -p plasma-render"
         )
     target, metadata = load_target(args.sample, RATE)
     description = analyze(target, RATE)
