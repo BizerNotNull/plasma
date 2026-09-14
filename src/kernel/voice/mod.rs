@@ -4,7 +4,7 @@
 //! Base parameters are never overwritten by modulation. Oscillator phase/random
 //! are sampled at the next trigger; unison modulation rounds to whole voices.
 //! White noise is mixed with the oscillator bank before the filter. Unison stereo
-//! spread is applied per oscillator around its pan.
+//! spread, FM, ring and noise amounts are modulation targets; bases stay unchanged.
 
 mod envelope;
 mod filter;
@@ -90,9 +90,6 @@ impl Voice {
             self.clock = 0;
             for i in 0..OSCILLATOR_COUNT {
                 self.bank.set_sync(i, params.sync[i])?;
-                self.bank.set_fm(i, f64::from(params.fm[i]))?;
-                self.bank.set_ring(i, f64::from(params.ring[i]))?;
-                self.bank.set_spread(i, f64::from(params.spread[i]))?;
             }
         }
         Ok(())
@@ -196,6 +193,13 @@ impl Voice {
         for i in 0..GLOBAL_COUNT {
             self.effective_globals[i] =
                 denormalize(28 + i, self.telemetry.effective[28 + i]).unwrap_or(GLOBAL_DEFAULTS[i]);
+        }
+        for i in 0..OSCILLATOR_COUNT {
+            let _ = self.bank.set_spread(i, f64::from(self.telemetry.effective[41 + i]));
+        }
+        for i in 0..2 {
+            let _ = self.bank.set_fm(i + 1, f64::from(self.telemetry.effective[44 + i]));
+            let _ = self.bank.set_ring(i + 1, f64::from(self.telemetry.effective[46 + i]));
         }
         let cutoff = (self.effective_globals[6] as f64).min(self.sample_rate * 0.45);
         self.target_g = (std::f64::consts::PI * cutoff / self.sample_rate).tan();
@@ -305,8 +309,8 @@ impl Voice {
             return [0.0; 2];
         }
         let frame = self.bank.next_frame();
-        let noise = if self.params.noise > 0.0 {
-            (2.0 * self.noise.unit() - 1.0) * f64::from(self.params.noise)
+        let noise = if self.telemetry.effective[40] > 0.0 {
+            (2.0 * self.noise.unit() - 1.0) * f64::from(self.telemetry.effective[40])
         } else {
             0.0
         };

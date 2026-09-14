@@ -1,6 +1,6 @@
 use crate::{Error, OSCILLATOR_COUNT, OscillatorParams};
 
-pub const TARGET_COUNT: usize = 40;
+pub const TARGET_COUNT: usize = 48;
 pub const GLOBAL_COUNT: usize = 12;
 pub const SOURCE_COUNT: usize = 5;
 pub const GLOBAL_DEFAULTS: [f32; GLOBAL_COUNT] = [
@@ -36,7 +36,7 @@ pub fn target_range(target: usize) -> Result<(f32, f32, bool), Error> {
             6 => (0.0, 100.0, false),
             _ => (-1.0, 1.0, false),
         },
-        27 | 30 | 33 | 35 | 38 => (0.0, 1.0, false),
+        27 | 30 | 33 | 35 | 38 | 40..=47 => (0.0, 1.0, false),
         28 | 29 | 31 | 36 | 37 | 39 => (0.001, 10.0, true),
         32 => (0.01, 30.0, true),
         34 => (20.0, 20000.0, true),
@@ -184,6 +184,14 @@ impl VoiceParams {
         for (i, v) in self.globals.iter().enumerate() {
             values[28 + i] = normalize(28 + i, *v).unwrap_or(0.0);
         }
+        values[40] = self.noise;
+        for (i, v) in self.spread.iter().enumerate() {
+            values[41 + i] = *v;
+        }
+        values[44] = self.fm[1];
+        values[45] = self.fm[2];
+        values[46] = self.ring[1];
+        values[47] = self.ring[2];
         values
     }
 }

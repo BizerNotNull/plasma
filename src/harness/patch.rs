@@ -35,6 +35,17 @@ pub const GLOBAL_FIELDS: [&str; GLOBAL_COUNT + 1] = [
     "mod_release",
 ];
 
+pub const ANALOG_FIELDS: [&str; 8] = [
+    "noise",
+    "osc1_spread",
+    "osc2_spread",
+    "osc3_spread",
+    "osc2_fm",
+    "osc3_fm",
+    "osc2_ring",
+    "osc3_ring",
+];
+
 #[derive(Clone, Copy, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum OscWave {
@@ -130,8 +141,10 @@ pub struct Control {
 pub fn control_name(index: usize) -> String {
     if index < 27 {
         format!("osc{}_{}", index / 9 + 1, OSC_FIELDS[index % 9])
-    } else {
+    } else if index < 40 {
         GLOBAL_FIELDS[index - 27].to_owned()
+    } else {
+        ANALOG_FIELDS[index - 40].to_owned()
     }
 }
 
@@ -153,6 +166,12 @@ impl Patch {
         }
         controls.push(f64::from(params.volume));
         controls.extend(params.globals.iter().map(|&value| f64::from(value)));
+        controls.push(f64::from(params.noise));
+        controls.extend(params.spread.iter().map(|&value| f64::from(value)));
+        controls.push(f64::from(params.fm[1]));
+        controls.push(f64::from(params.fm[2]));
+        controls.push(f64::from(params.ring[1]));
+        controls.push(f64::from(params.ring[2]));
         Self {
             controls,
             waveforms: params.oscillators.map(|osc| osc.waveform.into()),
@@ -211,6 +230,14 @@ impl Patch {
         for (index, value) in params.globals.iter_mut().enumerate() {
             *value = self.controls[28 + index] as f32;
         }
+        params.noise = self.controls[40] as f32;
+        for (index, value) in params.spread.iter_mut().enumerate() {
+            *value = self.controls[41 + index] as f32;
+        }
+        params.fm[1] = self.controls[44] as f32;
+        params.fm[2] = self.controls[45] as f32;
+        params.ring[1] = self.controls[46] as f32;
+        params.ring[2] = self.controls[47] as f32;
         params.lfo_wave = self.lfo_wave.into();
         params.lfo_retrigger = self.lfo_retrigger;
         for (source, row) in self.routes.iter().enumerate() {

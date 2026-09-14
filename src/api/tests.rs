@@ -433,3 +433,84 @@ fn oscillator_spread_round_trips_and_widens_stereo() {
     let stereo = b.chunks(2).any(|frame| frame[0] != frame[1]);
     assert!(stereo);
 }
+
+#[test]
+fn analog_amount_routes_change_rendered_audio_without_changing_bases() {
+    let dry = Synth::new();
+    let wet = Synth::new();
+    let mute = OscillatorParams {
+        level: 0.0,
+        ..Default::default()
+    };
+    dry.set_params(0, mute).unwrap();
+    wet.set_params(0, mute).unwrap();
+    wet.set_route(40, 3, 1.0).unwrap();
+    assert!(wet.set_route(48, 3, 1.0).is_err());
+    assert_eq!(wet.voice_params().unwrap().noise, 0.0);
+    assert_eq!(wet.voice_params().unwrap().routes[3][40], 1.0);
+
+    dry.note_on(60, 127).unwrap();
+    wet.note_on(60, 127).unwrap();
+    let mut dry_r = AudioRenderer::new(dry, 48_000.0, 5).unwrap();
+    let mut wet_r = AudioRenderer::new(wet, 48_000.0, 5).unwrap();
+    let mut a = [0.0_f32; 4096];
+    let mut b = [0.0_f32; 4096];
+    dry_r.render_interleaved(&mut a, 2);
+    wet_r.render_interleaved(&mut b, 2);
+    assert_ne!(a, b);
+    assert!(b.iter().all(|s| s.is_finite()));
+    assert!(b.iter().any(|s| *s != 0.0));
+
+    let free = Synth::new();
+    let fm = Synth::new();
+    let master = OscillatorParams {
+        waveform: Waveform::Sine,
+        level: 0.0,
+        ..Default::default()
+    };
+    let slave = OscillatorParams {
+        waveform: Waveform::Sine,
+        pitch: 19.0,
+        level: 1.0,
+        ..Default::default()
+    };
+    for synth in [&free, &fm] {
+        synth.set_params(0, master).unwrap();
+        synth.set_params(1, slave).unwrap();
+    }
+    fm.set_route(44, 3, 1.0).unwrap();
+    assert_eq!(fm.voice_params().unwrap().fm[1], 0.0);
+    free.note_on(60, 127).unwrap();
+    fm.note_on(60, 127).unwrap();
+    let mut free_r = AudioRenderer::new(free, 48_000.0, 5).unwrap();
+    let mut fm_r = AudioRenderer::new(fm, 48_000.0, 5).unwrap();
+    let mut c = [0.0_f32; 4096];
+    let mut d = [0.0_f32; 4096];
+    free_r.render_interleaved(&mut c, 2);
+    fm_r.render_interleaved(&mut d, 2);
+    assert_ne!(c, d);
+
+    let narrow = Synth::new();
+    let wide = Synth::new();
+    let unison = OscillatorParams {
+        waveform: Waveform::Saw,
+        unison: 4,
+        detune: 18.0,
+        level: 1.0,
+        ..Default::default()
+    };
+    narrow.set_params(0, unison).unwrap();
+    wide.set_params(0, unison).unwrap();
+    wide.set_route(41, 3, 1.0).unwrap();
+    assert_eq!(wide.voice_params().unwrap().spread[0], 0.0);
+    narrow.note_on(60, 127).unwrap();
+    wide.note_on(60, 127).unwrap();
+    let mut narrow_r = AudioRenderer::new(narrow, 48_000.0, 5).unwrap();
+    let mut wide_r = AudioRenderer::new(wide, 48_000.0, 5).unwrap();
+    let mut e = [0.0_f32; 4096];
+    let mut f = [0.0_f32; 4096];
+    narrow_r.render_interleaved(&mut e, 2);
+    wide_r.render_interleaved(&mut f, 2);
+    assert_ne!(e, f);
+    assert!(f.chunks(2).any(|frame| frame[0] != frame[1]));
+}

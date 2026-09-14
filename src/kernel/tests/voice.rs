@@ -614,3 +614,122 @@ fn unison_spread_widens_stereo_and_rejects_invalid() {
     assert!(wide_stereo);
     assert!(narrow_centered);
 }
+
+#[test]
+fn analog_amounts_are_modulation_targets_without_changing_bases() {
+    assert!(plasma_kernel::target_range(48).is_err());
+
+    let mut params = VoiceParams::default();
+    params.oscillators[0].level = 0.0;
+    params.globals[..4].copy_from_slice(&[0.001, 0.001, 1.0, 0.2]);
+    params.globals[6] = 18000.0;
+    let mut dry = Voice::new(48_000.0, 11).unwrap();
+    let mut wet = Voice::new(48_000.0, 11).unwrap();
+    dry.set_params(params).unwrap();
+    params.routes[3][40] = 1.0;
+    wet.set_params(params).unwrap();
+    dry.note_on(220.0, 127).unwrap();
+    wet.note_on(220.0, 127).unwrap();
+    let mut dry_energy = 0.0;
+    let mut wet_energy = 0.0;
+    for _ in 0..4800 {
+        let a = dry.next_frame();
+        let b = wet.next_frame();
+        assert!(b.iter().all(|s| s.is_finite() && s.abs() <= 1.0));
+        dry_energy += (a[0] as f64).powi(2);
+        wet_energy += (b[0] as f64).powi(2);
+    }
+    assert!(dry_energy < 1e-12);
+    assert!(wet_energy > 0.01);
+    assert_eq!(wet.params().noise, 0.0);
+    assert!((wet.telemetry().effective[40] - 1.0).abs() < 1e-6);
+
+    let mut silent = Voice::new(48_000.0, 11).unwrap();
+    silent.set_params(params).unwrap();
+    silent.note_on(220.0, 0).unwrap();
+    let mut silent_energy = 0.0;
+    for _ in 0..4800 {
+        let frame = silent.next_frame();
+        silent_energy += (frame[0] as f64).powi(2);
+    }
+    assert!(silent_energy < 1e-12);
+
+    let mut fm_params = VoiceParams::default();
+    fm_params.oscillators[0].waveform = Waveform::Sine;
+    fm_params.oscillators[0].level = 0.0;
+    fm_params.oscillators[1].waveform = Waveform::Sine;
+    fm_params.oscillators[1].level = 1.0;
+    fm_params.globals[6] = 18000.0;
+    let mut free = Voice::new(48_000.0, 4).unwrap();
+    let mut routed = Voice::new(48_000.0, 4).unwrap();
+    free.set_params(fm_params).unwrap();
+    fm_params.routes[3][44] = 1.0;
+    routed.set_params(fm_params).unwrap();
+    free.note_on(220.0, 127).unwrap();
+    routed.note_on(220.0, 127).unwrap();
+    let mut different = false;
+    for _ in 0..2048 {
+        if free.next_frame() != routed.next_frame() {
+            different = true;
+        }
+    }
+    assert!(different);
+    assert_eq!(routed.params().fm[1], 0.0);
+    assert!((routed.telemetry().effective[44] - 1.0).abs() < 1e-6);
+
+    let mut ring_params = VoiceParams::default();
+    ring_params.oscillators[0].waveform = Waveform::Sine;
+    ring_params.oscillators[0].level = 0.0;
+    ring_params.oscillators[1].waveform = Waveform::Sine;
+    ring_params.oscillators[1].level = 1.0;
+    ring_params.globals[6] = 18000.0;
+    let mut ring_free = Voice::new(48_000.0, 4).unwrap();
+    let mut ring_routed = Voice::new(48_000.0, 4).unwrap();
+    ring_free.set_params(ring_params).unwrap();
+    ring_params.routes[3][46] = 1.0;
+    ring_routed.set_params(ring_params).unwrap();
+    ring_free.note_on(220.0, 127).unwrap();
+    ring_routed.note_on(220.0, 127).unwrap();
+    different = false;
+    for _ in 0..2048 {
+        if ring_free.next_frame() != ring_routed.next_frame() {
+            different = true;
+        }
+    }
+    assert!(different);
+    assert_eq!(ring_routed.params().ring[1], 0.0);
+
+    let mut spread_params = VoiceParams::default();
+    spread_params.oscillators[0].waveform = Waveform::Saw;
+    spread_params.oscillators[0].unison = 4;
+    spread_params.oscillators[0].detune = 18.0;
+    spread_params.globals[..4].copy_from_slice(&[0.001, 0.001, 1.0, 0.2]);
+    spread_params.globals[6] = 18000.0;
+    let mut narrow = Voice::new(48_000.0, 4).unwrap();
+    let mut wide = Voice::new(48_000.0, 4).unwrap();
+    narrow.set_params(spread_params).unwrap();
+    spread_params.routes[3][41] = 1.0;
+    wide.set_params(spread_params).unwrap();
+    narrow.note_on(220.0, 127).unwrap();
+    wide.note_on(220.0, 127).unwrap();
+    let mut wide_stereo = false;
+    let mut narrow_centered = true;
+    different = false;
+    for _ in 0..2048 {
+        let a = narrow.next_frame();
+        let b = wide.next_frame();
+        if a != b {
+            different = true;
+        }
+        if b[0] != b[1] {
+            wide_stereo = true;
+        }
+        if a[0] != a[1] {
+            narrow_centered = false;
+        }
+    }
+    assert!(different);
+    assert!(wide_stereo);
+    assert!(narrow_centered);
+    assert_eq!(wide.params().spread[0], 0.0);
+}

@@ -30,10 +30,12 @@
 //! ADSRs, a free or retriggered LFO, a stereo state-variable filter
 //! (lowpass/bandpass/highpass), a white-noise mixer into that filter
 //! and a modulation matrix.
-//! Targets 0..27 are the nine oscillator knobs per oscillator (pitch, fine,
+//! Targets 0..26 are the nine oscillator knobs per oscillator (pitch, fine,
 //! phase, random phase, pulse width, unison, detune, pan, level); 27 is master
-//! gain and 28..40 are the twelve [`VoiceParams::globals`] controls, with MOD ADSR
-//! appended at 36..40. AMP ENV, LFO, MOD ENV, velocity and key tracking may route
+//! gain and 28..39 are the twelve [`VoiceParams::globals`] controls, with MOD ADSR
+//! at 36..39. Target 40 is noise; 41..43 are unison spread per oscillator;
+//! 44..45 are FM amounts for oscillators 1 and 2; 46..47 are their ring amounts.
+//! AMP ENV, LFO, MOD ENV, velocity and key tracking may route
 //! to every target with signed
 //! normalized depths. Only AMP ENV controls final amplitude and voice lifetime.
 //! Velocity is a per-note unipolar source; key tracking is centered on MIDI 60

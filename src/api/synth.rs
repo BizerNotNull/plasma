@@ -162,7 +162,8 @@ impl Synth {
         })
     }
 
-    /// AMP ENV, LFO, MOD ENV, velocity and key tracking can address every target.
+    /// AMP ENV, LFO, MOD ENV, velocity and key tracking can address every target,
+    /// including noise (40), spread (41..43), FM (44..45) and ring (46..47).
     /// Source indices: 0 AMP ENV, 1 LFO, 2 MOD ENV, 3 velocity (0..1),
     /// 4 key tracking (MIDI 60 = 0, 60 semitones/unit, clamped to -1..1).
     /// Depth is signed normalized target travel, not a cutoff tracking percentage.
