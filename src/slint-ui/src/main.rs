@@ -64,6 +64,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     window.set_filter_mode(0);
     window.set_glide(params.glide);
     window.set_legato(params.legato);
+    window.set_always_glide(params.always_glide);
     window.set_sustain(params.sustain);
     window.set_pitch_bend(params.pitch_bend);
     window.set_pitch_bend_range(params.pitch_bend_range);
@@ -185,6 +186,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let Some(window) = weak.upgrade() else { return };
             if show_result(&window, synth.set_legato(legato)) {
                 window.set_legato(legato);
+            }
+        }
+    });
+    window.on_always_glide_edited({
+        let weak = window.as_weak();
+        let synth = synth.clone();
+        move |always| {
+            let Some(window) = weak.upgrade() else { return };
+            if show_result(&window, synth.set_always_glide(always)) {
+                window.set_always_glide(always);
             }
         }
     });

@@ -109,6 +109,15 @@ impl Synth {
         })
     }
 
+    /// Slide from the last pitch even when envelopes retrigger. Off (default)
+    /// is fingered: glide only on overlapping legato notes.
+    pub fn set_always_glide(&self, always: bool) -> Result<(), Error> {
+        self.update(|c| {
+            c.params.always_glide = always;
+            Ok(())
+        })
+    }
+
     /// Damper pedal. Note-off of unheld keys is deferred until sustain is released.
     /// Pedaled slots are stolen before physically held notes. All-notes-off still
     /// releases immediately.

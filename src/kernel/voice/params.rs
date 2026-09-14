@@ -85,6 +85,9 @@ pub struct VoiceParams {
     pub glide: f32,
     /// Overlapping notes slide on one voice instead of stacking.
     pub legato: bool,
+    /// Slide from the previous pitch even when envelopes retrigger. Legato
+    /// overlapping notes still skip retrigger; fingered (default) glides only then.
+    pub always_glide: bool,
     /// Damper pedal. Note-off of keys that are no longer held is deferred until
     /// sustain is released. Physically held keys keep sounding. Pedaled slots
     /// count as unheld for stealing.
@@ -127,6 +130,7 @@ impl Default for VoiceParams {
             filter_mode: FilterMode::Lowpass,
             glide: 0.0,
             legato: false,
+            always_glide: false,
             sustain: false,
             pitch_bend: 0.0,
             pitch_bend_range: 2.0,

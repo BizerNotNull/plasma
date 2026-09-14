@@ -38,8 +38,9 @@
 //! 44..45 are FM amounts for oscillators 1 and 2; 46..47 are their ring amounts;
 //! 48 is glide time (0..=2 s). Targets 49 and 50 are oscillator 0's self-FM and
 //! self-ring. Targets 51 and 52 are hard-sync amounts for oscillators 1 and 2
-//! (threshold 0.5; boolean bases stay unchanged). Glide is still sampled into an in-progress slide
-//! at the overlapping legato trigger, and a modulated zero snaps the remainder.
+//! (threshold 0.5; boolean bases stay unchanged). Glide is sampled into an in-progress slide
+//! at the overlapping legato trigger or, with always-glide, at any retrigger from the previous
+//! pitch; a modulated zero snaps the remainder.
 //! AMP ENV, LFO, MOD ENV, velocity, key tracking and channel mod wheel may route
 //! to every target with signed
 //! normalized depths. Only AMP ENV controls final amplitude and voice lifetime.
@@ -52,7 +53,7 @@
 //! 1 kHz, without recomputing unchanged oscillator coefficients.
 //!
 //! [`PolySynth`] supplies eight independent voices, MIDI note/velocity events,
-//! channel pitch bend, damper sustain, channel mod wheel, selective release, last-note-priority legato, deterministic stealing and a bounded stereo mix.
+//! channel pitch bend, damper sustain, channel mod wheel, always-glide, selective release, last-note-priority legato, deterministic stealing and a bounded stereo mix.
 
 mod dsp;
 mod error;

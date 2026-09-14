@@ -216,6 +216,7 @@ export component MainWindow inherits Window {
     in property <int> filter-mode: 0;
     in property <float> glide: 0;
     in property <bool> legato: false;
+    in property <bool> always-glide: false;
     in property <bool> sustain: false;
     in property <float> pitch-bend: 0;
     in property <float> pitch-bend-range: 2;
@@ -244,6 +245,7 @@ export component MainWindow inherits Window {
     callback filter-mode-edited(int);
     callback glide-edited(float);
     callback legato-edited(bool);
+    callback always-glide-edited(bool);
     callback sustain-edited(bool);
     callback noise-edited(float);
     callback pitch-bend-edited(float);
@@ -313,6 +315,7 @@ export component MainWindow inherits Window {
                                     alignment: end;
                                     spacing: 4px;
                                     Action { text: root.legato ? "LEGATO: ON" : "LEGATO: OFF"; accent: #abc7df; selected: root.legato; activated => { root.legato-edited(!root.legato); } }
+                                    Action { text: root.always-glide ? "ALWAYS: ON" : "ALWAYS: OFF"; accent: #abc7df; selected: root.always-glide; activated => { root.always-glide-edited(!root.always-glide); } }
                                     Action { text: root.sustain ? "SUSTAIN: ON" : "SUSTAIN: OFF"; accent: #abc7df; selected: root.sustain; activated => { root.sustain-edited(!root.sustain); } }
                                 }
                             }

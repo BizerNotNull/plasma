@@ -39,6 +39,8 @@ struct Slot {
 /// sustain note-offs every unheld slot; all-notes-off still releases immediately.
 /// Channel mod wheel is a unipolar matrix source shared by every slot; moving it
 /// does not retrigger, steal, or change velocity/key tracking.
+/// Always-glide slides newly allocated slots from the last triggered pitch
+/// even after silence, without requiring legato or skipping retrigger.
 ///
 /// Legato reuses the most recently triggered held slot. Further keys are stored
 /// in a fixed last-note stack: releasing the sounding note retunes to the
@@ -59,6 +61,7 @@ pub struct PolySynth {
     held_notes: [u8; 128],
     held_velocities: [u8; 128],
     held_len: usize,
+    last_hz: f64,
 }
 
 impl PolySynth {
@@ -87,6 +90,7 @@ impl PolySynth {
             held_notes: [0; 128],
             held_velocities: [0; 128],
             held_len: 0,
+            last_hz: 0.0,
         })
     }
 
@@ -169,6 +173,9 @@ impl PolySynth {
         let slot = &mut self.slots[index];
         if repeated.is_none() && legato_held.is_none() {
             slot.voice.reset_note();
+            if self.params.always_glide && self.last_hz > 0.0 {
+                slot.voice.prime_pitch(self.last_hz);
+            }
         }
         slot.voice.note_on(midi_hz(note), velocity)?;
         slot.note = Some(note);
@@ -177,6 +184,7 @@ impl PolySynth {
         slot.velocity = velocity as f32 / 127.0;
         slot.transition_from = slot.last;
         slot.transition_left = self.transition_frames;
+        self.last_hz = midi_hz(note);
         Ok(())
     }
 
@@ -198,6 +206,7 @@ impl PolySynth {
                         slot.velocity = f32::from(velocity) / 127.0;
                         slot.transition_from = slot.last;
                         slot.transition_left = self.transition_frames;
+                        self.last_hz = midi_hz(previous);
                         return Ok(());
                     }
                 } else if self.params.sustain {

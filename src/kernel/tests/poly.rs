@@ -691,3 +691,36 @@ fn channel_mod_wheel_is_shared_and_does_not_drop_notes() {
     assert!((poly.telemetry().effective[52] - expected_end).abs() < 1e-6);
     assert_eq!(poly.active_voice_count(), 0);
 }
+
+#[test]
+fn always_glide_slides_staccato_from_last_pitch() {
+    let mut fingered = synth(59);
+    let mut always = synth(59);
+    let mut params = VoiceParams::default();
+    params.globals[..8].copy_from_slice(&[0.001, 0.001, 1.0, 0.01, 1.0, 0.0, 18000.0, 0.1]);
+    params.glide = 0.1;
+    fingered.set_params(params).unwrap();
+    params.always_glide = true;
+    always.set_params(params).unwrap();
+
+    fingered.note_on(60, 127).unwrap();
+    always.note_on(60, 127).unwrap();
+    advance(&mut fingered, 500);
+    advance(&mut always, 500);
+    fingered.note_off(60).unwrap();
+    always.note_off(60).unwrap();
+    advance(&mut fingered, 2000);
+    advance(&mut always, 2000);
+    assert_eq!(fingered.active_voice_count(), 0);
+    assert_eq!(always.active_voice_count(), 0);
+
+    fingered.note_on(72, 127).unwrap();
+    always.note_on(72, 127).unwrap();
+    let mut a = [[0.0; 2]; 256];
+    let mut b = [[0.0; 2]; 256];
+    fingered.render(&mut a);
+    always.render(&mut b);
+    assert_ne!(a, b);
+    assert!(b.iter().flatten().all(|s| s.is_finite()));
+    assert_eq!(always.active_voice_count(), 1);
+}

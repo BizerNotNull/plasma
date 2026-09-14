@@ -5,7 +5,7 @@
 //! Base parameters are never overwritten by modulation. Oscillator phase/random
 //! are sampled at the next trigger; unison modulation rounds to whole voices.
 //! White noise is mixed with the oscillator bank before the filter. Unison stereo
-//! spread, FM, ring (including oscillator 0 self-mod), noise, glide and oscillator 1/2 hard-sync amounts are modulation targets; bases stay unchanged.
+//! spread, FM, ring (including oscillator 0 self-mod), noise, glide and oscillator 1/2 hard-sync amounts are modulation targets; bases stay unchanged. Always-glide slides retriggers from the previous pitch; fingered glide still requires overlapping legato.
 
 mod envelope;
 mod filter;
@@ -102,7 +102,8 @@ impl Voice {
     /// [-1, 1]; zero frequency maps to -1. Invalid frequency or velocity leaves
     /// all state unchanged. Legato overlapping notes retune without oscillator
     /// retrigger; glide interpolates in octaves over the effective glide time
-    /// (target 48). Base [`VoiceParams::glide`] is unchanged by modulation.
+    /// (target 48). Always-glide also slides from the previous pitch when
+    /// retriggering. Base [`VoiceParams::glide`] is unchanged by modulation.
     /// Channel pitch bend then scales the gliding/note frequency by
     /// `2^(bend * range / 12)` without changing key tracking.
     pub fn note_on(&mut self, frequency: f64, velocity: u8) -> Result<(), Error> {
@@ -120,19 +121,22 @@ impl Voice {
                 as f32
         };
         self.control_tick();
-        let slide = self.params.legato && !self.amp_env.is_idle();
+        let legato_hold = self.params.legato && !self.amp_env.is_idle();
+        let can_glide = (legato_hold || self.params.always_glide)
+            && self.glide_seconds() > 0.0
+            && self.current_hz > 0.0
+            && frequency > 0.0;
         self.target_hz = frequency;
-        if slide {
-            if self.glide_seconds() <= 0.0 || self.current_hz <= 0.0 || frequency <= 0.0 {
-                self.current_hz = frequency;
-                self.glide_remaining = 0.0;
-                self.bank.set_frequency(self.playback_hz())?;
-            } else {
-                self.glide_remaining = self.glide_seconds();
-            }
+        if can_glide {
+            self.glide_remaining = self.glide_seconds();
         } else {
             self.current_hz = frequency;
             self.glide_remaining = 0.0;
+            if legato_hold {
+                self.bank.set_frequency(self.playback_hz())?;
+            }
+        }
+        if !legato_hold {
             self.bank.note_on(self.playback_hz())?;
             self.amp_env.note_on();
             self.mod_env.note_on();
@@ -281,6 +285,13 @@ impl Voice {
         self.glide_remaining = 0.0;
     }
 
+    /// Restores a remembered pitch so always-glide can slide after `reset_note`.
+    pub(crate) fn prime_pitch(&mut self, hz: f64) {
+        if hz.is_finite() && hz > 0.0 {
+            self.current_hz = hz;
+            self.target_hz = hz;
+        }
+    }
     /// One stereo frame, with no allocation, synchronization or shared state.
     pub fn next_frame(&mut self) -> [f32; 2] {
         self.next_frame_unclipped()

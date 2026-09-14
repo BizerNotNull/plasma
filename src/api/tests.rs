@@ -256,6 +256,11 @@ fn set_glide_and_legato_round_trip() {
     assert!(synth.set_glide(f32::NAN).is_err());
     assert_eq!(synth.voice_params().unwrap().glide, 0.25);
     assert!(synth.voice_params().unwrap().legato);
+    assert!(!synth.voice_params().unwrap().always_glide);
+    synth.set_always_glide(true).unwrap();
+    assert!(synth.voice_params().unwrap().always_glide);
+    synth.set_always_glide(false).unwrap();
+    assert!(!synth.voice_params().unwrap().always_glide);
 }
 
 #[test]
@@ -734,4 +739,48 @@ fn set_mod_wheel_round_trips_and_changes_rendered_audio() {
     assert!(b.iter().all(|s| s.is_finite()));
     assert!(b.iter().any(|s| *s != 0.0));
     assert!((wet.telemetry().mod_wheel - 1.0).abs() < 1e-6);
+}
+
+#[test]
+fn set_always_glide_slides_staccato_rendered_audio() {
+    let fingered = Synth::new();
+    let sliding = Synth::new();
+    fingered.set_glide(0.2).unwrap();
+    sliding.set_glide(0.2).unwrap();
+    sliding.set_always_glide(true).unwrap();
+    assert!(!fingered.voice_params().unwrap().always_glide);
+    assert!(sliding.voice_params().unwrap().always_glide);
+    assert_eq!(sliding.voice_params().unwrap().glide, 0.2);
+
+    fingered.set_global(0, 0.001).unwrap();
+    fingered.set_global(1, 0.001).unwrap();
+    fingered.set_global(2, 1.0).unwrap();
+    fingered.set_global(3, 0.01).unwrap();
+    sliding.set_global(0, 0.001).unwrap();
+    sliding.set_global(1, 0.001).unwrap();
+    sliding.set_global(2, 1.0).unwrap();
+    sliding.set_global(3, 0.01).unwrap();
+
+    let mut fingered_r = AudioRenderer::new(fingered.clone(), 48_000.0, 23).unwrap();
+    let mut sliding_r = AudioRenderer::new(sliding.clone(), 48_000.0, 23).unwrap();
+    let mut settle = [[0.0; 2]; 512];
+    fingered.note_on(60, 127).unwrap();
+    sliding.note_on(60, 127).unwrap();
+    fingered_r.render(&mut settle);
+    sliding_r.render(&mut settle);
+    fingered.note_off(60).unwrap();
+    sliding.note_off(60).unwrap();
+    fingered_r.render(&mut [[0.0; 2]; 4096]);
+    sliding_r.render(&mut [[0.0; 2]; 4096]);
+    assert_eq!(fingered_r.active_voice_count(), 0);
+    assert_eq!(sliding_r.active_voice_count(), 0);
+
+    fingered.note_on(72, 127).unwrap();
+    sliding.note_on(72, 127).unwrap();
+    let mut a = [0.0_f32; 4096];
+    let mut b = [0.0_f32; 4096];
+    fingered_r.render_interleaved(&mut a, 2);
+    sliding_r.render_interleaved(&mut b, 2);
+    assert_ne!(a, b);
+    assert!(b.iter().all(|s| s.is_finite()));
 }

@@ -373,6 +373,7 @@ fn filter_mode_selects_svf_taps() {
 fn default_glide_is_instant_and_legato_glide_slides_pitch() {
     assert_eq!(VoiceParams::default().glide, 0.0);
     assert!(!VoiceParams::default().legato);
+    assert!(!VoiceParams::default().always_glide);
 
     let mut voice = Voice::new(48000.0, 9).unwrap();
     let mut params = VoiceParams::default();
@@ -1124,4 +1125,50 @@ fn invalid_mod_wheel_is_rejected_atomically() {
     assert!(voice.set_params(params).is_err());
     assert_eq!(voice.params().mod_wheel, 0.5);
     assert_eq!(voice.telemetry().mod_wheel, 0.5);
+}
+
+#[test]
+fn always_glide_slides_without_legato_and_retriggers_amp() {
+    let mut voice = Voice::new(48_000.0, 9).unwrap();
+    let mut params = VoiceParams::default();
+    params.globals[..4].copy_from_slice(&[0.001, 0.001, 0.5, 0.2]);
+    params.glide = 0.1;
+    params.always_glide = true;
+    voice.set_params(params).unwrap();
+    voice.note_on(220.0, 127).unwrap();
+    for _ in 0..1000 {
+        voice.next_frame();
+    }
+    voice.note_off();
+    for _ in 0..20_000 {
+        voice.next_frame();
+    }
+    assert!(voice.is_silent());
+    voice.note_on(440.0, 127).unwrap();
+    let env = voice.telemetry().env;
+    assert!(env < 0.2, "AMP ENV retriggered from silence, got {env}");
+    for _ in 0..2400 {
+        voice.next_frame();
+    }
+    let hz = voice.frequency();
+    assert!(hz > 230.0 && hz < 430.0, "always-glide pitch {hz}");
+    assert!(
+        (voice.telemetry().env - 0.5).abs() < 0.02,
+        "AMP ENV settled at {}",
+        voice.telemetry().env
+    );
+
+    params.always_glide = false;
+    let mut fingered = Voice::new(48_000.0, 9).unwrap();
+    fingered.set_params(params).unwrap();
+    fingered.note_on(220.0, 127).unwrap();
+    for _ in 0..1000 {
+        fingered.next_frame();
+    }
+    fingered.note_off();
+    for _ in 0..20_000 {
+        fingered.next_frame();
+    }
+    fingered.note_on(440.0, 127).unwrap();
+    assert!((fingered.frequency() - 440.0).abs() < 1e-9);
 }
