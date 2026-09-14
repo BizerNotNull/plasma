@@ -64,7 +64,7 @@ impl OscillatorBank {
     }
 
     /// Linear through-zero FM from oscillator 0's first unison waveform.
-    /// Amount is 0..=1 (internal index 0..=8). Index 0 is stored but ignored.
+    /// Amount is 0..=1 (internal index 0..=8). Index 0 is one-sample self-FM.
     /// Invalid indices or amounts leave the bank unchanged.
     pub fn set_fm(&mut self, index: usize, amount: f64) -> Result<(), Error> {
         let osc = self
@@ -87,7 +87,8 @@ impl OscillatorBank {
 
     /// Ring modulation against oscillator 0's first unison waveform.
     /// Amount is 0..=1: `out = carrier * (1 - amount + amount * modulator)`.
-    /// Index 0 is stored but ignored. Invalid indices or amounts leave the bank unchanged.
+    /// Index 0 rings against that sample delayed by one frame.
+    /// Invalid indices or amounts leave the bank unchanged.
     /// Independent of oscillator 0's audible level.
     pub fn set_ring(&mut self, index: usize, amount: f64) -> Result<(), Error> {
         let osc = self
@@ -163,7 +164,8 @@ impl OscillatorBank {
     /// Oscillators 1 and 2 with `sync` reset when oscillator 0's first voice wraps.
     /// Their phase increment is `step * (1 + 8 * fm * modulator)` using oscillator 0's
     /// pre-gain first-unison sample, so FM works when oscillator 0's level is 0.
-    /// Ring uses that same sample: `out * (1 - ring + ring * modulator)`.
+    /// Oscillator 0 uses that sample delayed by one frame as its FM/ring modulator.
+    /// Ring uses `out * (1 - ring + ring * modulator)`.
     pub fn next_frame(&mut self) -> [f32; 2] {
         let mut frame = [0.0; 2];
         let mut master_wrapped = false;
@@ -172,12 +174,21 @@ impl OscillatorBank {
             if i > 0 && osc.sync && master_wrapped {
                 osc.hard_sync();
             }
-            let mut sample = osc.next(if i == 0 { 0.0 } else { master_mod });
+            let had_delay = osc.modulator_valid;
+            let fm_mod = if i == 0 { osc.modulator } else { master_mod };
+            let mut sample = osc.next(fm_mod);
             if i == 0 {
                 master_wrapped = osc.wrapped();
                 master_mod = osc.modulator;
-            } else if osc.ring > 0.0 {
-                let scale = 1.0 - osc.ring + osc.ring * master_mod;
+                osc.modulator_valid = true;
+            }
+            if osc.ring > 0.0 {
+                let modulator = if i == 0 {
+                    if had_delay { fm_mod } else { 1.0 }
+                } else {
+                    master_mod
+                };
+                let scale = 1.0 - osc.ring + osc.ring * modulator;
                 sample[0] *= scale;
                 sample[1] *= scale;
             }

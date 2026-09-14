@@ -618,7 +618,9 @@ fn unison_spread_widens_stereo_and_rejects_invalid() {
 #[test]
 fn analog_amounts_are_modulation_targets_without_changing_bases() {
     assert_eq!(plasma_kernel::target_range(48).unwrap(), (0.0, 2.0, false));
-    assert!(plasma_kernel::target_range(49).is_err());
+    assert_eq!(plasma_kernel::target_range(49).unwrap(), (0.0, 1.0, false));
+    assert_eq!(plasma_kernel::target_range(50).unwrap(), (0.0, 1.0, false));
+    assert!(plasma_kernel::target_range(51).is_err());
 
     let mut params = VoiceParams::default();
     params.oscillators[0].level = 0.0;
@@ -733,6 +735,51 @@ fn analog_amounts_are_modulation_targets_without_changing_bases() {
     assert!(wide_stereo);
     assert!(narrow_centered);
     assert_eq!(wide.params().spread[0], 0.0);
+}
+
+#[test]
+fn oscillator_zero_self_mod_is_a_modulation_target_without_changing_bases() {
+    let mut params = VoiceParams::default();
+    params.oscillators[0].waveform = Waveform::Sine;
+    params.oscillators[0].level = 1.0;
+    params.globals[6] = 18000.0;
+    let mut free = Voice::new(48_000.0, 4).unwrap();
+    let mut fm = Voice::new(48_000.0, 4).unwrap();
+    free.set_params(params).unwrap();
+    params.routes[3][49] = 1.0;
+    fm.set_params(params).unwrap();
+    free.note_on(220.0, 127).unwrap();
+    fm.note_on(220.0, 127).unwrap();
+    let mut different = false;
+    for _ in 0..2048 {
+        if free.next_frame() != fm.next_frame() {
+            different = true;
+        }
+    }
+    assert!(different);
+    assert_eq!(fm.params().fm[0], 0.0);
+    assert!((fm.telemetry().effective[49] - 1.0).abs() < 1e-6);
+
+    let mut ring_params = VoiceParams::default();
+    ring_params.oscillators[0].waveform = Waveform::Sine;
+    ring_params.oscillators[0].level = 1.0;
+    ring_params.globals[6] = 18000.0;
+    let mut ring_free = Voice::new(48_000.0, 4).unwrap();
+    let mut ring_routed = Voice::new(48_000.0, 4).unwrap();
+    ring_free.set_params(ring_params).unwrap();
+    ring_params.routes[3][50] = 1.0;
+    ring_routed.set_params(ring_params).unwrap();
+    ring_free.note_on(220.0, 127).unwrap();
+    ring_routed.note_on(220.0, 127).unwrap();
+    different = false;
+    for _ in 0..2048 {
+        if ring_free.next_frame() != ring_routed.next_frame() {
+            different = true;
+        }
+    }
+    assert!(different);
+    assert_eq!(ring_routed.params().ring[0], 0.0);
+    assert!((ring_routed.telemetry().effective[50] - 1.0).abs() < 1e-6);
 }
 
 #[test]

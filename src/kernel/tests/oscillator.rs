@@ -312,6 +312,40 @@ fn oscillator_zero_fm_does_not_change_audio() {
 }
 
 #[test]
+fn oscillator_zero_self_fm_changes_audio_after_first_sample() {
+    let params = OscillatorParams {
+        waveform: Waveform::Sine,
+        phase: 0.25,
+        pan: -1.0,
+        ..Default::default()
+    };
+    let mut free = OscillatorBank::new(48_000.0, 3).unwrap();
+    let mut fm = OscillatorBank::new(48_000.0, 3).unwrap();
+    free.set_params(0, params).unwrap();
+    fm.set_params(0, params).unwrap();
+    fm.set_fm(0, 1.0).unwrap();
+    free.note_on(220.0).unwrap();
+    fm.note_on(220.0).unwrap();
+    let first_free = free.next_frame();
+    let first_fm = fm.next_frame();
+    assert_eq!(first_free, first_fm);
+    assert!(first_free[0] > 0.9, "phase 0.25 sine must be near 1, got {}", first_free[0]);
+    let mut different = false;
+    for _ in 0..2048 {
+        let a = free.next_frame();
+        let b = fm.next_frame();
+        assert!(b.iter().all(|s| s.is_finite()));
+        if a != b {
+            different = true;
+        }
+    }
+    assert!(different, "OSC 0 self-FM must change audio after the delay sample");
+    free.note_on(220.0).unwrap();
+    fm.note_on(220.0).unwrap();
+    assert_eq!(free.next_frame(), fm.next_frame());
+}
+
+#[test]
 fn silent_modulator_still_frequency_modulates() {
     let mut free = fm_bank(0.0, 0.0);
     let mut fm = fm_bank(0.0, 1.0);
@@ -485,13 +519,37 @@ fn ring_bank(modulator_level: f64, ring: f64) -> OscillatorBank {
 }
 
 #[test]
-fn zero_ring_matches_unmodulated_audio() {
-    let mut free = ring_bank(1.0, 0.0);
-    let mut ignored = ring_bank(1.0, 0.0);
-    ignored.set_ring(0, 1.0).unwrap();
-    for _ in 0..1024 {
-        assert_eq!(free.next_frame(), ignored.next_frame());
+fn oscillator_zero_self_ring_changes_audio_after_first_sample() {
+    let params = OscillatorParams {
+        waveform: Waveform::Sine,
+        phase: 0.25,
+        pan: -1.0,
+        ..Default::default()
+    };
+    let mut free = OscillatorBank::new(48_000.0, 3).unwrap();
+    let mut ring = OscillatorBank::new(48_000.0, 3).unwrap();
+    free.set_params(0, params).unwrap();
+    ring.set_params(0, params).unwrap();
+    ring.set_ring(0, 1.0).unwrap();
+    free.note_on(220.0).unwrap();
+    ring.note_on(220.0).unwrap();
+    let first_free = free.next_frame();
+    let first_ring = ring.next_frame();
+    assert_eq!(first_free, first_ring);
+    assert!(first_free[0] > 0.9, "phase 0.25 sine must be near 1, got {}", first_free[0]);
+    let mut different = false;
+    for _ in 0..2048 {
+        let a = free.next_frame();
+        let b = ring.next_frame();
+        assert!(b.iter().all(|s| s.is_finite()));
+        if a != b {
+            different = true;
+        }
     }
+    assert!(different, "OSC 0 self-ring must change audio after the delay sample");
+    free.note_on(220.0).unwrap();
+    ring.note_on(220.0).unwrap();
+    assert_eq!(free.next_frame(), ring.next_frame());
 }
 
 #[test]

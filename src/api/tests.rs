@@ -352,6 +352,36 @@ fn oscillator_fm_round_trips_and_changes_rendered_audio() {
 }
 
 #[test]
+fn oscillator_zero_self_fm_and_ring_round_trip_and_change_audio() {
+    let free = Synth::new();
+    let fm = Synth::new();
+    let ring = Synth::new();
+    fm.set_fm(0, 0.8).unwrap();
+    ring.set_ring(0, 0.8).unwrap();
+    assert_eq!(fm.voice_params().unwrap().fm[0], 0.8);
+    assert_eq!(ring.voice_params().unwrap().ring[0], 0.8);
+    assert_eq!(free.voice_params().unwrap().fm[0], 0.0);
+    assert_eq!(free.voice_params().unwrap().ring[0], 0.0);
+
+    free.note_on(60, 127).unwrap();
+    fm.note_on(60, 127).unwrap();
+    ring.note_on(60, 127).unwrap();
+    let mut free_r = AudioRenderer::new(free, 48_000.0, 5).unwrap();
+    let mut fm_r = AudioRenderer::new(fm, 48_000.0, 5).unwrap();
+    let mut ring_r = AudioRenderer::new(ring, 48_000.0, 5).unwrap();
+    let mut a = [0.0_f32; 4096];
+    let mut b = [0.0_f32; 4096];
+    let mut c = [0.0_f32; 4096];
+    free_r.render_interleaved(&mut a, 2);
+    fm_r.render_interleaved(&mut b, 2);
+    ring_r.render_interleaved(&mut c, 2);
+    assert_ne!(a, b);
+    assert_ne!(a, c);
+    assert!(b.iter().all(|s| s.is_finite()));
+    assert!(c.iter().all(|s| s.is_finite()));
+}
+
+#[test]
 fn oscillator_ring_round_trips_and_changes_rendered_audio() {
     let free = Synth::new();
     let ring = Synth::new();
@@ -468,7 +498,7 @@ fn analog_amount_routes_change_rendered_audio_without_changing_bases() {
     dry.set_params(0, mute).unwrap();
     wet.set_params(0, mute).unwrap();
     wet.set_route(40, 3, 1.0).unwrap();
-    assert!(wet.set_route(49, 3, 1.0).is_err());
+    assert!(wet.set_route(51, 3, 1.0).is_err());
     assert_eq!(wet.voice_params().unwrap().noise, 0.0);
     assert_eq!(wet.voice_params().unwrap().routes[3][40], 1.0);
 

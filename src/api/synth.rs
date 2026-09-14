@@ -129,7 +129,7 @@ impl Synth {
     }
 
     /// Linear through-zero FM from oscillator 0. Amount is 0..=1 (index 0..=8).
-    /// Index 0 is stored but ignored. Independent of oscillator 0's audible level.
+    /// Index 0 is one-sample self-FM. Independent of oscillator 0's audible level.
     pub fn set_fm(&self, index: usize, amount: f32) -> Result<(), Error> {
         self.update(|c| {
             *c.params
@@ -141,7 +141,7 @@ impl Synth {
     }
 
     /// Ring modulation from oscillator 0. Amount is 0..=1.
-    /// Index 0 is stored but ignored. Independent of oscillator 0's audible level.
+    /// Index 0 is one-sample self-ring. Independent of oscillator 0's audible level.
     pub fn set_ring(&self, index: usize, amount: f32) -> Result<(), Error> {
         self.update(|c| {
             *c.params
@@ -165,7 +165,8 @@ impl Synth {
     }
 
     /// AMP ENV, LFO, MOD ENV, velocity and key tracking can address every target,
-    /// including noise (40), spread (41..43), FM (44..45), ring (46..47) and glide (48).
+    /// including noise (40), spread (41..43), FM (44..45), ring (46..47), glide (48)
+    /// and oscillator 0 self-FM/ring (49..50).
     /// Source indices: 0 AMP ENV, 1 LFO, 2 MOD ENV, 3 velocity (0..1),
     /// 4 key tracking (MIDI 60 = 0, 60 semitones/unit, clamped to -1..1).
     /// Depth is signed normalized target travel, not a cutoff tracking percentage.

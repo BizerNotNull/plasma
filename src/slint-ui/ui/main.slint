@@ -139,11 +139,11 @@ component OscillatorCard inherits Panel {
             Knob { row: 2; col: 2; target: 41 + (root.number - 1); label: "SPREAD"; unit: "%"; value: root.state.spread; edited(v) => { root.edited(13, v); } }
             Knob { row: 3; col: 0; target: (root.number - 1) * 9 + 8; label: "LEVEL"; unit: "%"; default-value: 100; value: root.state.level; edited(v) => { root.edited(9, v); } }
         }
-        Text { text: "Phase / rand: next note · Unison: whole voices · Spread: stereo unison · Sync: OSC 1 wrap · FM/Ring: OSC 1 audio-rate"; color: #91a0ac; font-size: 9px; }
-        if root.number > 1: HorizontalLayout {
+        Text { text: "Phase / rand: next note · Unison: whole voices · Spread: stereo unison · Sync: OSC 1 wrap · FM/Ring: OSC 1 audio-rate · OSC 1: one-sample feedback"; color: #91a0ac; font-size: 9px; }
+        HorizontalLayout {
             spacing: 4px;
-            Knob { label: "FM OSC 1"; unit: "%"; target: 42 + root.number; value: root.state.fm; edited(v) => { root.edited(11, v); } }
-            Knob { label: "RING OSC 1"; unit: "%"; target: 44 + root.number; value: root.state.ring; edited(v) => { root.edited(12, v); } }
+            Knob { label: root.number == 1 ? "FM SELF" : "FM OSC 1"; unit: "%"; target: root.number == 1 ? 49 : 42 + root.number; value: root.state.fm; edited(v) => { root.edited(11, v); } }
+            Knob { label: root.number == 1 ? "RING SELF" : "RING OSC 1"; unit: "%"; target: root.number == 1 ? 50 : 44 + root.number; value: root.state.ring; edited(v) => { root.edited(12, v); } }
         }
     }
 }
@@ -236,7 +236,7 @@ export component MainWindow inherits Window {
     callback glide-edited(float);
     callback legato-edited(bool);
     callback noise-edited(float);
-    private property <[string]> destinations: ["OSC 1 · Semitone", "OSC 1 · Fine", "OSC 1 · Phase", "OSC 1 · Phase random", "OSC 1 · Pulse width", "OSC 1 · Unison", "OSC 1 · Detune", "OSC 1 · Pan", "OSC 1 · Level", "OSC 2 · Semitone", "OSC 2 · Fine", "OSC 2 · Phase", "OSC 2 · Phase random", "OSC 2 · Pulse width", "OSC 2 · Unison", "OSC 2 · Detune", "OSC 2 · Pan", "OSC 2 · Level", "OSC 3 · Semitone", "OSC 3 · Fine", "OSC 3 · Phase", "OSC 3 · Phase random", "OSC 3 · Pulse width", "OSC 3 · Unison", "OSC 3 · Detune", "OSC 3 · Pan", "OSC 3 · Level", "Master · Volume", "AMP ENV · Attack", "AMP ENV · Decay", "AMP ENV · Sustain", "AMP ENV · Release", "LFO · Rate", "LFO · Phase", "Filter · Cutoff", "Filter · Resonance", "MOD ENV · Attack", "MOD ENV · Decay", "MOD ENV · Sustain", "MOD ENV · Release", "Noise", "OSC 1 · Spread", "OSC 2 · Spread", "OSC 3 · Spread", "OSC 2 · FM", "OSC 3 · FM", "OSC 2 · Ring", "OSC 3 · Ring", "Glide"];
+    private property <[string]> destinations: ["OSC 1 · Semitone", "OSC 1 · Fine", "OSC 1 · Phase", "OSC 1 · Phase random", "OSC 1 · Pulse width", "OSC 1 · Unison", "OSC 1 · Detune", "OSC 1 · Pan", "OSC 1 · Level", "OSC 2 · Semitone", "OSC 2 · Fine", "OSC 2 · Phase", "OSC 2 · Phase random", "OSC 2 · Pulse width", "OSC 2 · Unison", "OSC 2 · Detune", "OSC 2 · Pan", "OSC 2 · Level", "OSC 3 · Semitone", "OSC 3 · Fine", "OSC 3 · Phase", "OSC 3 · Phase random", "OSC 3 · Pulse width", "OSC 3 · Unison", "OSC 3 · Detune", "OSC 3 · Pan", "OSC 3 · Level", "Master · Volume", "AMP ENV · Attack", "AMP ENV · Decay", "AMP ENV · Sustain", "AMP ENV · Release", "LFO · Rate", "LFO · Phase", "Filter · Cutoff", "Filter · Resonance", "MOD ENV · Attack", "MOD ENV · Decay", "MOD ENV · Sustain", "MOD ENV · Release", "Noise", "OSC 1 · Spread", "OSC 2 · Spread", "OSC 3 · Spread", "OSC 2 · FM", "OSC 3 · FM", "OSC 2 · Ring", "OSC 3 · Ring", "Glide", "OSC 1 · FM", "OSC 1 · Ring"];
 
     VerticalLayout {
         padding: 10px;

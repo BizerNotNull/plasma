@@ -1,7 +1,8 @@
 //! One oscillator with up to four symmetrically detuned unison voices.
 //! Oscillators 1 and 2 may hard-sync to oscillator 0's first unison wrap,
 //! may be linearly frequency-modulated by oscillator 0's first-unison waveform,
-//! and may ring-modulate against that same pre-gain sample. Unison voices may
+//! and may ring-modulate against that same pre-gain sample. Oscillator 0 uses
+//! that sample delayed by one frame as self-FM and self-ring. Unison voices may
 //! be stereo-spread around the oscillator pan.
 
 use crate::{Error, dsp};
@@ -96,6 +97,7 @@ pub(crate) struct Oscillator {
     fm: f64,
     ring: f64,
     modulator: f64,
+    modulator_valid: bool,
 }
 
 impl Oscillator {
@@ -111,6 +113,7 @@ impl Oscillator {
             fm: 0.0,
             ring: 0.0,
             modulator: 0.0,
+            modulator_valid: false,
         }
     }
 
@@ -139,6 +142,8 @@ impl Oscillator {
     }
 
     pub(crate) fn trigger(&mut self, random: &mut dsp::Random) {
+        self.modulator = 0.0;
+        self.modulator_valid = false;
         for phase in &mut self.phases {
             *phase = (self.params.phase + self.params.phase_random * random.unit()).rem_euclid(1.0);
         }

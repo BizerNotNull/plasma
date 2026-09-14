@@ -22,7 +22,8 @@
 //! frequency-modulated by oscillator 0's first-unison waveform (amount 0..=1 maps
 //! to index 0..=8, independent of OSC 1 level). They may also ring-modulate
 //! against that pre-gain sample (`out * (1 - amount + amount * mod)`, amount 0..=1,
-//! independent of OSC 1 level). Unison voices may be stereo-spread around each
+//! independent of OSC 1 level). Oscillator 0 uses that sample delayed by one
+//! frame as self-FM and self-ring. Unison voices may be stereo-spread around each
 //! oscillator's pan (0..=1; zero keeps every voice at that pan). Parameters are
 //! copied in at control rate, not shared atomically.
 //!
@@ -35,7 +36,8 @@
 //! gain and 28..39 are the twelve [`VoiceParams::globals`] controls, with MOD ADSR
 //! at 36..39. Target 40 is noise; 41..43 are unison spread per oscillator;
 //! 44..45 are FM amounts for oscillators 1 and 2; 46..47 are their ring amounts;
-//! 48 is glide time (0..=2 s). Glide is still sampled into an in-progress slide
+//! 48 is glide time (0..=2 s). Targets 49 and 50 are oscillator 0's self-FM and
+//! self-ring. Glide is still sampled into an in-progress slide
 //! at the overlapping legato trigger, and a modulated zero snaps the remainder.
 //! AMP ENV, LFO, MOD ENV, velocity and key tracking may route
 //! to every target with signed
