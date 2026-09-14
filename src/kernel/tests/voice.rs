@@ -617,7 +617,8 @@ fn unison_spread_widens_stereo_and_rejects_invalid() {
 
 #[test]
 fn analog_amounts_are_modulation_targets_without_changing_bases() {
-    assert!(plasma_kernel::target_range(48).is_err());
+    assert_eq!(plasma_kernel::target_range(48).unwrap(), (0.0, 2.0, false));
+    assert!(plasma_kernel::target_range(49).is_err());
 
     let mut params = VoiceParams::default();
     params.oscillators[0].level = 0.0;
@@ -732,4 +733,108 @@ fn analog_amounts_are_modulation_targets_without_changing_bases() {
     assert!(wide_stereo);
     assert!(narrow_centered);
     assert_eq!(wide.params().spread[0], 0.0);
+}
+
+#[test]
+fn glide_is_a_modulation_target_without_changing_base() {
+    let mut params = VoiceParams::default();
+    params.legato = true;
+    params.glide = 0.0;
+    params.globals[..4].copy_from_slice(&[0.001, 0.001, 0.5, 0.2]);
+    params.routes[3][48] = 1.0;
+
+    let mut sliding = Voice::new(48_000.0, 9).unwrap();
+    sliding.set_params(params).unwrap();
+    sliding.note_on(220.0, 127).unwrap();
+    for _ in 0..1000 {
+        sliding.next_frame();
+    }
+    let env = sliding.telemetry().env;
+    sliding.note_on(440.0, 127).unwrap();
+    assert_eq!(sliding.telemetry().env, env);
+    assert_eq!(sliding.params().glide, 0.0);
+    assert!((sliding.telemetry().effective[48] - 1.0).abs() < 1e-6);
+    for _ in 0..4800 {
+        sliding.next_frame();
+    }
+    let hz = sliding.frequency();
+    assert!(hz > 221.0 && hz < 250.0, "velocity-scaled glide pitch {hz}");
+
+    let mut instant = Voice::new(48_000.0, 9).unwrap();
+    instant.set_params(params).unwrap();
+    instant.note_on(220.0, 0).unwrap();
+    for _ in 0..1000 {
+        instant.next_frame();
+    }
+    instant.note_on(440.0, 0).unwrap();
+    assert!((instant.frequency() - 440.0).abs() < 1e-9);
+    assert!(instant.telemetry().effective[48].abs() < 1e-6);
+}
+
+#[test]
+fn modulated_zero_snaps_remainder_of_in_progress_glide() {
+    let mut params = VoiceParams::default();
+    params.legato = true;
+    params.glide = 0.0;
+    params.globals[..4].copy_from_slice(&[0.001, 0.001, 0.5, 0.2]);
+    params.routes[3][48] = 1.0;
+
+    let mut voice = Voice::new(48_000.0, 9).unwrap();
+    voice.set_params(params).unwrap();
+    voice.note_on(220.0, 127).unwrap();
+    for _ in 0..1000 {
+        voice.next_frame();
+    }
+    voice.note_on(440.0, 127).unwrap();
+    for _ in 0..4800 {
+        voice.next_frame();
+    }
+    let mid = voice.frequency();
+    assert!(mid > 221.0 && mid < 250.0, "pre-snap pitch {mid}");
+
+    params.routes[3][48] = 0.0;
+    voice.set_params(params).unwrap();
+    for _ in 0..200 {
+        voice.next_frame();
+    }
+    assert_eq!(voice.params().glide, 0.0);
+    assert!(voice.telemetry().effective[48].abs() < 1e-6);
+    assert!(
+        (voice.frequency() - 440.0).abs() < 1e-6,
+        "modulated zero should snap, got {}",
+        voice.frequency()
+    );
+}
+
+#[test]
+fn in_progress_glide_keeps_trigger_duration_when_effective_stays_nonzero() {
+    let mut params = VoiceParams::default();
+    params.legato = true;
+    params.glide = 0.05;
+    params.globals[..4].copy_from_slice(&[0.001, 0.001, 0.5, 0.2]);
+
+    let mut voice = Voice::new(48_000.0, 9).unwrap();
+    voice.set_params(params).unwrap();
+    voice.note_on(220.0, 127).unwrap();
+    for _ in 0..1000 {
+        voice.next_frame();
+    }
+    voice.note_on(440.0, 127).unwrap();
+    for _ in 0..1000 {
+        voice.next_frame();
+    }
+    let mid = voice.frequency();
+    assert!(mid > 221.0 && mid < 430.0, "mid-slide pitch {mid}");
+
+    params.glide = 2.0;
+    voice.set_params(params).unwrap();
+    assert_eq!(voice.params().glide, 2.0);
+    for _ in 0..2400 {
+        voice.next_frame();
+    }
+    assert!(
+        (voice.frequency() - 440.0).abs() < 1e-3,
+        "snapshotted 50 ms slide should finish, got {}",
+        voice.frequency()
+    );
 }

@@ -445,7 +445,7 @@ fn analog_amount_routes_change_rendered_audio_without_changing_bases() {
     dry.set_params(0, mute).unwrap();
     wet.set_params(0, mute).unwrap();
     wet.set_route(40, 3, 1.0).unwrap();
-    assert!(wet.set_route(48, 3, 1.0).is_err());
+    assert!(wet.set_route(49, 3, 1.0).is_err());
     assert_eq!(wet.voice_params().unwrap().noise, 0.0);
     assert_eq!(wet.voice_params().unwrap().routes[3][40], 1.0);
 
@@ -513,4 +513,31 @@ fn analog_amount_routes_change_rendered_audio_without_changing_bases() {
     wide_r.render_interleaved(&mut f, 2);
     assert_ne!(e, f);
     assert!(f.chunks(2).any(|frame| frame[0] != frame[1]));
+}
+
+#[test]
+fn glide_route_changes_rendered_audio_without_changing_base() {
+    let instant = Synth::new();
+    let sliding = Synth::new();
+    instant.set_legato(true).unwrap();
+    sliding.set_legato(true).unwrap();
+    sliding.set_route(48, 3, 1.0).unwrap();
+    assert_eq!(sliding.voice_params().unwrap().glide, 0.0);
+    assert_eq!(sliding.voice_params().unwrap().routes[3][48], 1.0);
+
+    instant.note_on(60, 127).unwrap();
+    sliding.note_on(60, 127).unwrap();
+    let mut instant_r = AudioRenderer::new(instant.clone(), 48_000.0, 5).unwrap();
+    let mut sliding_r = AudioRenderer::new(sliding.clone(), 48_000.0, 5).unwrap();
+    let mut settle = [0.0_f32; 2048];
+    instant_r.render_interleaved(&mut settle, 2);
+    sliding_r.render_interleaved(&mut settle, 2);
+    instant.note_on(72, 127).unwrap();
+    sliding.note_on(72, 127).unwrap();
+    let mut a = [0.0_f32; 4096];
+    let mut b = [0.0_f32; 4096];
+    instant_r.render_interleaved(&mut a, 2);
+    sliding_r.render_interleaved(&mut b, 2);
+    assert_ne!(a, b);
+    assert!(b.iter().all(|s| s.is_finite()));
 }

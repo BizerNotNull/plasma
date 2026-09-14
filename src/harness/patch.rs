@@ -35,7 +35,7 @@ pub const GLOBAL_FIELDS: [&str; GLOBAL_COUNT + 1] = [
     "mod_release",
 ];
 
-pub const ANALOG_FIELDS: [&str; 8] = [
+pub const ANALOG_FIELDS: [&str; 9] = [
     "noise",
     "osc1_spread",
     "osc2_spread",
@@ -44,6 +44,7 @@ pub const ANALOG_FIELDS: [&str; 8] = [
     "osc3_fm",
     "osc2_ring",
     "osc3_ring",
+    "glide",
 ];
 
 #[derive(Clone, Copy, Deserialize, Serialize)]
@@ -172,6 +173,7 @@ impl Patch {
         controls.push(f64::from(params.fm[2]));
         controls.push(f64::from(params.ring[1]));
         controls.push(f64::from(params.ring[2]));
+        controls.push(f64::from(params.glide));
         Self {
             controls,
             waveforms: params.oscillators.map(|osc| osc.waveform.into()),
@@ -238,6 +240,7 @@ impl Patch {
         params.fm[2] = self.controls[45] as f32;
         params.ring[1] = self.controls[46] as f32;
         params.ring[2] = self.controls[47] as f32;
+        params.glide = self.controls[48] as f32;
         params.lfo_wave = self.lfo_wave.into();
         params.lfo_retrigger = self.lfo_retrigger;
         for (source, row) in self.routes.iter().enumerate() {

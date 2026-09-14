@@ -1,6 +1,6 @@
 use crate::{Error, OSCILLATOR_COUNT, OscillatorParams};
 
-pub const TARGET_COUNT: usize = 48;
+pub const TARGET_COUNT: usize = 49;
 pub const GLOBAL_COUNT: usize = 12;
 pub const SOURCE_COUNT: usize = 5;
 pub const GLOBAL_DEFAULTS: [f32; GLOBAL_COUNT] = [
@@ -40,6 +40,7 @@ pub fn target_range(target: usize) -> Result<(f32, f32, bool), Error> {
         28 | 29 | 31 | 36 | 37 | 39 => (0.001, 10.0, true),
         32 => (0.01, 30.0, true),
         34 => (20.0, 20000.0, true),
+        48 => (0.0, 2.0, false),
         _ => return Err(Error::InvalidParameter("modulation target")),
     };
     Ok(range)
@@ -80,7 +81,7 @@ pub struct VoiceParams {
     pub lfo_wave: LfoWave,
     pub lfo_retrigger: bool,
     pub filter_mode: FilterMode,
-    /// Portamento time in seconds, 0..=2. Zero is instantaneous.
+    /// Portamento time in seconds, 0..=2. Zero is instantaneous. Target 48.
     pub glide: f32,
     /// Overlapping notes slide on one voice instead of stacking.
     pub legato: bool,
@@ -138,9 +139,7 @@ impl VoiceParams {
                 return Err(Error::InvalidParameter("route depth"));
             }
         }
-        if !self.glide.is_finite() || !(0.0..=2.0).contains(&self.glide) {
-            return Err(Error::InvalidParameter("glide"));
-        }
+        normalize(48, self.glide)?;
         for amount in self.fm {
             if !amount.is_finite() || !(0.0..=1.0).contains(&amount) {
                 return Err(Error::InvalidParameter("fm"));
@@ -192,6 +191,7 @@ impl VoiceParams {
         values[45] = self.fm[2];
         values[46] = self.ring[1];
         values[47] = self.ring[2];
+        values[48] = normalize(48, self.glide).unwrap_or(0.0);
         values
     }
 }

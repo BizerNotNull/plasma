@@ -4,7 +4,7 @@
 //! Base parameters are never overwritten by modulation. Oscillator phase/random
 //! are sampled at the next trigger; unison modulation rounds to whole voices.
 //! White noise is mixed with the oscillator bank before the filter. Unison stereo
-//! spread, FM, ring and noise amounts are modulation targets; bases stay unchanged.
+//! spread, FM, ring, noise and glide amounts are modulation targets; bases stay unchanged.
 
 mod envelope;
 mod filter;
@@ -102,7 +102,8 @@ impl Voice {
     /// frequency, centered on MIDI 60 with 60 semitones per unit and clamped to
     /// [-1, 1]; zero frequency maps to -1. Invalid frequency or velocity leaves
     /// all state unchanged. Legato overlapping notes retune without oscillator
-    /// retrigger; glide interpolates in octaves over [`VoiceParams::glide`].
+    /// retrigger; glide interpolates in octaves over the effective glide time
+    /// (target 48). Base [`VoiceParams::glide`] is unchanged by modulation.
     pub fn note_on(&mut self, frequency: f64, velocity: u8) -> Result<(), Error> {
         if !frequency.is_finite() || frequency < 0.0 {
             return Err(Error::InvalidFrequency);
@@ -121,12 +122,12 @@ impl Voice {
         let slide = self.params.legato && !self.amp_env.is_idle();
         self.target_hz = frequency;
         if slide {
-            if self.params.glide <= 0.0 || self.current_hz <= 0.0 || frequency <= 0.0 {
+            if self.glide_seconds() <= 0.0 || self.current_hz <= 0.0 || frequency <= 0.0 {
                 self.current_hz = frequency;
                 self.glide_remaining = 0.0;
                 self.bank.set_frequency(frequency)?;
             } else {
-                self.glide_remaining = f64::from(self.params.glide);
+                self.glide_remaining = self.glide_seconds();
             }
         } else {
             self.current_hz = frequency;
@@ -206,8 +207,12 @@ impl Voice {
         self.target_k = 2.0 - 1.9 * self.effective_globals[7] as f64;
     }
 
+    fn glide_seconds(&self) -> f64 {
+        f64::from(denormalize(48, self.telemetry.effective[48]).unwrap_or(0.0))
+    }
+
     fn advance_glide(&mut self) {
-        if self.params.glide <= 0.0 || self.glide_remaining <= 0.0 {
+        if self.glide_seconds() <= 0.0 || self.glide_remaining <= 0.0 {
             if self.current_hz != self.target_hz {
                 self.current_hz = self.target_hz;
                 let _ = self.bank.set_frequency(self.current_hz);

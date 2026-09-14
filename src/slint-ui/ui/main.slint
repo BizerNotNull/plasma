@@ -236,7 +236,7 @@ export component MainWindow inherits Window {
     callback glide-edited(float);
     callback legato-edited(bool);
     callback noise-edited(float);
-    private property <[string]> destinations: ["OSC 1 · Semitone", "OSC 1 · Fine", "OSC 1 · Phase", "OSC 1 · Phase random", "OSC 1 · Pulse width", "OSC 1 · Unison", "OSC 1 · Detune", "OSC 1 · Pan", "OSC 1 · Level", "OSC 2 · Semitone", "OSC 2 · Fine", "OSC 2 · Phase", "OSC 2 · Phase random", "OSC 2 · Pulse width", "OSC 2 · Unison", "OSC 2 · Detune", "OSC 2 · Pan", "OSC 2 · Level", "OSC 3 · Semitone", "OSC 3 · Fine", "OSC 3 · Phase", "OSC 3 · Phase random", "OSC 3 · Pulse width", "OSC 3 · Unison", "OSC 3 · Detune", "OSC 3 · Pan", "OSC 3 · Level", "Master · Volume", "AMP ENV · Attack", "AMP ENV · Decay", "AMP ENV · Sustain", "AMP ENV · Release", "LFO · Rate", "LFO · Phase", "Filter · Cutoff", "Filter · Resonance", "MOD ENV · Attack", "MOD ENV · Decay", "MOD ENV · Sustain", "MOD ENV · Release", "Noise", "OSC 1 · Spread", "OSC 2 · Spread", "OSC 3 · Spread", "OSC 2 · FM", "OSC 3 · FM", "OSC 2 · Ring", "OSC 3 · Ring"];
+    private property <[string]> destinations: ["OSC 1 · Semitone", "OSC 1 · Fine", "OSC 1 · Phase", "OSC 1 · Phase random", "OSC 1 · Pulse width", "OSC 1 · Unison", "OSC 1 · Detune", "OSC 1 · Pan", "OSC 1 · Level", "OSC 2 · Semitone", "OSC 2 · Fine", "OSC 2 · Phase", "OSC 2 · Phase random", "OSC 2 · Pulse width", "OSC 2 · Unison", "OSC 2 · Detune", "OSC 2 · Pan", "OSC 2 · Level", "OSC 3 · Semitone", "OSC 3 · Fine", "OSC 3 · Phase", "OSC 3 · Phase random", "OSC 3 · Pulse width", "OSC 3 · Unison", "OSC 3 · Detune", "OSC 3 · Pan", "OSC 3 · Level", "Master · Volume", "AMP ENV · Attack", "AMP ENV · Decay", "AMP ENV · Sustain", "AMP ENV · Release", "LFO · Rate", "LFO · Phase", "Filter · Cutoff", "Filter · Resonance", "MOD ENV · Attack", "MOD ENV · Decay", "MOD ENV · Sustain", "MOD ENV · Release", "Noise", "OSC 1 · Spread", "OSC 2 · Spread", "OSC 3 · Spread", "OSC 2 · FM", "OSC 3 · FM", "OSC 2 · Ring", "OSC 3 · Ring", "Glide"];
 
     VerticalLayout {
         padding: 10px;
@@ -295,7 +295,7 @@ export component MainWindow inherits Window {
                             }
                             HorizontalLayout {
                                 spacing: 4px;
-                                Knob { label: "GLIDE"; unit: " s"; maximum: 2; value: root.glide; edited(v) => { root.glide-edited(v); } }
+                                Knob { target: 48; label: "GLIDE"; unit: " s"; maximum: 2; value: root.glide; edited(v) => { root.glide-edited(v); } }
                                 VerticalLayout {
                                     alignment: end;
                                     Action { text: root.legato ? "LEGATO: ON" : "LEGATO: OFF"; accent: #abc7df; selected: root.legato; activated => { root.legato-edited(!root.legato); } }
