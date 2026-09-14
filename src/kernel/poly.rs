@@ -33,6 +33,13 @@ struct Slot {
 /// Velocity scales amplitude linearly by velocity / 127, before this fade, and
 /// independently supplies each voice's Velocity modulation source.
 ///
+/// Legato reuses the most recently triggered held slot. Further keys are stored
+/// in a fixed last-note stack: releasing the sounding note retunes to the
+/// previous still-held key without releasing the envelope, and releasing a
+/// non-sounding key only forgets it. Enabling legato captures currently held
+/// keys in trigger order and releases extra voices so one remains; polyphony
+/// is unchanged when legato is off.
+///
 /// Mixing uses fixed 1/8 headroom, independent of the active count, then clamps
 /// only the final stereo sum to [-1, 1]. Construction, events and rendering use
 /// fixed storage and never allocate, lock or wait.
@@ -41,6 +48,9 @@ pub struct PolySynth {
     transition_frames: usize,
     idle_telemetry: Telemetry,
     params: VoiceParams,
+    held_notes: [u8; 128],
+    held_velocities: [u8; 128],
+    held_len: usize,
 }
 
 impl PolySynth {
@@ -65,6 +75,9 @@ impl PolySynth {
             transition_frames: (sample_rate * 0.003).round().max(2.0) as usize,
             idle_telemetry: Telemetry::default(),
             params: VoiceParams::default(),
+            held_notes: [0; 128],
+            held_velocities: [0; 128],
+            held_len: 0,
         })
     }
 
@@ -78,7 +91,13 @@ impl PolySynth {
             slot.voice.set_params(params)?;
         }
         self.idle_telemetry.effective = params.normalized();
+        let was_legato = self.params.legato;
         self.params = params;
+        if !self.params.legato {
+            self.clear_held();
+        } else if !was_legato {
+            self.capture_held_keys();
+        }
         Ok(())
     }
 
@@ -92,20 +111,22 @@ impl PolySynth {
         if velocity == 0 {
             return self.note_off(note);
         }
+        if self.params.legato {
+            self.push_held(note, velocity);
+        }
         let repeated = self
             .slots
             .iter()
             .position(|slot| slot.held && slot.note == Some(note));
-        let legato_held = self.params.legato
-            && repeated.is_none()
-            && self.slots.iter().any(|slot| slot.held && slot.rank == 0);
+        let legato_held = if self.params.legato && repeated.is_none() {
+            self.legato_slot()
+        } else {
+            None
+        };
         let index = if let Some(index) = repeated {
             index
-        } else if legato_held {
-            self.slots
-                .iter()
-                .position(|slot| slot.held && slot.rank == 0)
-                .expect("rank-0 held slot")
+        } else if let Some(index) = legato_held {
+            index
         } else {
             self.slots
                 .iter()
@@ -127,19 +148,12 @@ impl PolySynth {
                         .expect("eight slots")
                 })
         };
-        let old_rank = self.slots[index].rank;
-        for slot in &mut self.slots {
-            if slot.rank < old_rank {
-                slot.rank += 1;
-            }
-        }
+        self.promote(index);
         let slot = &mut self.slots[index];
-        slot.rank = 0;
-        if repeated.is_none() && !legato_held {
+        if repeated.is_none() && legato_held.is_none() {
             slot.voice.reset_note();
         }
-        slot.voice
-            .note_on(440.0 * 2.0_f64.powf((note as f64 - 69.0) / 12.0), velocity)?;
+        slot.voice.note_on(midi_hz(note), velocity)?;
         slot.note = Some(note);
         slot.held = true;
         slot.velocity = velocity as f32 / 127.0;
@@ -150,6 +164,33 @@ impl PolySynth {
 
     pub fn note_off(&mut self, note: u8) -> Result<(), Error> {
         Self::validate_note(note)?;
+        if self.params.legato {
+            let was_top = self.held_len > 0 && self.held_notes[self.held_len - 1] == note;
+            self.remove_held(note);
+            if was_top {
+                if self.held_len > 0 {
+                    if let Some(index) = self.legato_slot() {
+                        let previous = self.held_notes[self.held_len - 1];
+                        let velocity = self.held_velocities[self.held_len - 1];
+                        self.promote(index);
+                        let slot = &mut self.slots[index];
+                        slot.voice.note_on(midi_hz(previous), velocity)?;
+                        slot.note = Some(previous);
+                        slot.held = true;
+                        slot.velocity = f32::from(velocity) / 127.0;
+                        slot.transition_from = slot.last;
+                        slot.transition_left = self.transition_frames;
+                        return Ok(());
+                    }
+                }
+            } else if !self
+                .slots
+                .iter()
+                .any(|slot| slot.held && slot.note == Some(note))
+            {
+                return Ok(());
+            }
+        }
         for slot in &mut self.slots {
             if slot.held && slot.note == Some(note) {
                 slot.held = false;
@@ -161,6 +202,7 @@ impl PolySynth {
 
     /// Releases all held notes normally rather than truncating their tails.
     pub fn all_notes_off(&mut self) {
+        self.clear_held();
         for slot in &mut self.slots {
             slot.held = false;
             slot.voice.note_off();
@@ -224,4 +266,80 @@ impl PolySynth {
             Ok(())
         }
     }
+
+    fn legato_slot(&self) -> Option<usize> {
+        self.slots
+            .iter()
+            .enumerate()
+            .filter(|(_, slot)| slot.held)
+            .min_by_key(|(_, slot)| slot.rank)
+            .map(|(i, _)| i)
+    }
+
+    fn promote(&mut self, index: usize) {
+        let old_rank = self.slots[index].rank;
+        for slot in &mut self.slots {
+            if slot.rank < old_rank {
+                slot.rank += 1;
+            }
+        }
+        self.slots[index].rank = 0;
+    }
+
+    fn capture_held_keys(&mut self) {
+        self.clear_held();
+        for rank in (0..POLYPHONY).rev() {
+            if let Some(slot) = self
+                .slots
+                .iter()
+                .find(|slot| slot.held && slot.rank == rank)
+            {
+                if let Some(note) = slot.note {
+                    let velocity = (slot.velocity * 127.0).round() as u8;
+                    self.push_held(note, velocity);
+                }
+            }
+        }
+        if let Some(keep) = self.legato_slot() {
+            for (i, slot) in self.slots.iter_mut().enumerate() {
+                if i != keep && slot.held {
+                    slot.held = false;
+                    slot.voice.note_off();
+                }
+            }
+            self.promote(keep);
+        }
+    }
+
+    fn push_held(&mut self, note: u8, velocity: u8) {
+        self.remove_held(note);
+        if self.held_len < self.held_notes.len() {
+            self.held_notes[self.held_len] = note;
+            self.held_velocities[self.held_len] = velocity;
+            self.held_len += 1;
+        }
+    }
+
+    fn remove_held(&mut self, note: u8) {
+        if let Some(index) = self.held_notes[..self.held_len]
+            .iter()
+            .position(|&held| held == note)
+        {
+            let last = self.held_len - 1;
+            if index != last {
+                self.held_notes.copy_within(index + 1..self.held_len, index);
+                self.held_velocities
+                    .copy_within(index + 1..self.held_len, index);
+            }
+            self.held_len = last;
+        }
+    }
+
+    fn clear_held(&mut self) {
+        self.held_len = 0;
+    }
+}
+
+fn midi_hz(note: u8) -> f64 {
+    440.0 * 2.0_f64.powf((f64::from(note) - 69.0) / 12.0)
 }

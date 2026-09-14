@@ -100,6 +100,8 @@ impl Synth {
         })
     }
 
+    /// Overlapping notes reuse one voice. Releasing the sounding note retunes
+    /// to the previous still-held key (last-note priority) instead of going idle.
     pub fn set_legato(&self, legato: bool) -> Result<(), Error> {
         self.update(|c| {
             c.params.legato = legato;

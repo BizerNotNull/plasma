@@ -327,3 +327,138 @@ fn legato_reuses_one_voice_and_poly_is_unchanged_when_legato_off() {
     legato.note_on(64, 127).unwrap();
     assert_eq!(legato.active_voice_count(), 1);
 }
+
+#[test]
+fn legato_release_returns_to_previous_held_note() {
+    let mut legato = synth(42);
+    let mut params = VoiceParams::default();
+    params.globals[..8].copy_from_slice(&[0.001, 0.001, 1.0, 0.01, 1.0, 0.0, 18000.0, 0.1]);
+    params.legato = true;
+    legato.set_params(params).unwrap();
+    legato.note_on(60, 1).unwrap();
+    advance(&mut legato, 100);
+    assert!(legato.telemetry().key_track.abs() < 1e-6);
+    assert!((legato.telemetry().velocity - 1.0 / 127.0).abs() < 1e-6);
+
+    legato.note_on(64, 127).unwrap();
+    advance(&mut legato, 100);
+    assert_eq!(legato.active_voice_count(), 1);
+    assert!((legato.telemetry().key_track - 4.0 / 60.0).abs() < 1e-5);
+
+    legato.note_off(64).unwrap();
+    advance(&mut legato, 100);
+    assert_eq!(legato.active_voice_count(), 1);
+    assert!(legato.telemetry().key_track.abs() < 1e-6);
+    assert!((legato.telemetry().velocity - 1.0 / 127.0).abs() < 1e-6);
+
+    legato.note_off(60).unwrap();
+    advance(&mut legato, 2000);
+    assert_eq!(legato.active_voice_count(), 0);
+
+    legato.note_on(60, 127).unwrap();
+    legato.note_on(64, 127).unwrap();
+    legato.note_off(60).unwrap();
+    advance(&mut legato, 100);
+    assert_eq!(legato.active_voice_count(), 1);
+    assert!((legato.telemetry().key_track - 4.0 / 60.0).abs() < 1e-5);
+    legato.note_off(64).unwrap();
+    advance(&mut legato, 2000);
+    assert_eq!(legato.active_voice_count(), 0);
+}
+
+#[test]
+fn legato_stack_walks_back_through_three_held_notes() {
+    let mut legato = synth(43);
+    let mut params = VoiceParams::default();
+    params.globals[..8].copy_from_slice(&[0.001, 0.001, 1.0, 0.01, 1.0, 0.0, 18000.0, 0.1]);
+    params.legato = true;
+    legato.set_params(params).unwrap();
+    legato.note_on(60, 127).unwrap();
+    legato.note_on(64, 127).unwrap();
+    legato.note_on(67, 127).unwrap();
+    assert_eq!(legato.active_voice_count(), 1);
+    assert!((legato.telemetry().key_track - 7.0 / 60.0).abs() < 1e-5);
+    legato.note_off(67).unwrap();
+    assert!((legato.telemetry().key_track - 4.0 / 60.0).abs() < 1e-5);
+    legato.note_off(64).unwrap();
+    assert!(legato.telemetry().key_track.abs() < 1e-6);
+    assert_eq!(legato.active_voice_count(), 1);
+}
+
+#[test]
+fn disabling_legato_clears_held_stack_and_releases_normally() {
+    let mut poly = synth(44);
+    let mut params = VoiceParams::default();
+    params.globals[..8].copy_from_slice(&[0.001, 0.001, 1.0, 0.01, 1.0, 0.0, 18000.0, 0.1]);
+    params.legato = true;
+    poly.set_params(params).unwrap();
+    poly.note_on(60, 127).unwrap();
+    poly.note_on(64, 127).unwrap();
+    params.legato = false;
+    poly.set_params(params).unwrap();
+    poly.note_off(64).unwrap();
+    advance(&mut poly, 2000);
+    assert_eq!(poly.active_voice_count(), 0);
+    params.legato = true;
+    poly.set_params(params).unwrap();
+    poly.note_on(67, 127).unwrap();
+    poly.note_off(67).unwrap();
+    advance(&mut poly, 2000);
+    assert_eq!(poly.active_voice_count(), 0);
+}
+
+#[test]
+fn all_notes_off_forgets_legato_stack() {
+    let mut poly = synth(45);
+    let mut params = VoiceParams::default();
+    params.globals[..8].copy_from_slice(&[0.001, 0.001, 1.0, 0.01, 1.0, 0.0, 18000.0, 0.1]);
+    params.legato = true;
+    poly.set_params(params).unwrap();
+    poly.note_on(60, 127).unwrap();
+    poly.note_on(64, 127).unwrap();
+    poly.all_notes_off();
+    advance(&mut poly, 2000);
+    assert_eq!(poly.active_voice_count(), 0);
+    poly.note_on(67, 127).unwrap();
+    poly.note_off(67).unwrap();
+    advance(&mut poly, 2000);
+    assert_eq!(poly.active_voice_count(), 0);
+}
+
+#[test]
+fn enabling_legato_captures_held_key_for_last_note_priority() {
+    let mut poly = synth(46);
+    poly.note_on(60, 1).unwrap();
+    advance(&mut poly, 100);
+    let mut params = VoiceParams::default();
+    params.globals[..8].copy_from_slice(&[0.001, 0.001, 1.0, 0.01, 1.0, 0.0, 18000.0, 0.1]);
+    params.legato = true;
+    poly.set_params(params).unwrap();
+    poly.note_on(64, 127).unwrap();
+    advance(&mut poly, 100);
+    assert_eq!(poly.active_voice_count(), 1);
+    poly.note_off(64).unwrap();
+    advance(&mut poly, 100);
+    assert_eq!(poly.active_voice_count(), 1);
+    assert!(poly.telemetry().key_track.abs() < 1e-6);
+    assert!((poly.telemetry().velocity - 1.0 / 127.0).abs() < 1e-6);
+}
+
+#[test]
+fn enabling_legato_collapses_chord_and_walks_captured_stack() {
+    let mut poly = synth(47);
+    poly.note_on(60, 127).unwrap();
+    poly.note_on(64, 127).unwrap();
+    assert_eq!(poly.active_voice_count(), 2);
+    let mut params = VoiceParams::default();
+    params.globals[..8].copy_from_slice(&[0.001, 0.001, 1.0, 0.01, 1.0, 0.0, 18000.0, 0.1]);
+    params.legato = true;
+    poly.set_params(params).unwrap();
+    advance(&mut poly, 2000);
+    assert_eq!(poly.active_voice_count(), 1);
+    assert!((poly.telemetry().key_track - 4.0 / 60.0).abs() < 1e-5);
+    poly.note_off(64).unwrap();
+    advance(&mut poly, 100);
+    assert_eq!(poly.active_voice_count(), 1);
+    assert!(poly.telemetry().key_track.abs() < 1e-6);
+}

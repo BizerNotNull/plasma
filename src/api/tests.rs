@@ -259,6 +259,29 @@ fn set_glide_and_legato_round_trip() {
 }
 
 #[test]
+fn legato_release_returns_to_previous_held_note() {
+    let synth = Synth::new();
+    synth.set_legato(true).unwrap();
+    synth.set_global(0, 0.001).unwrap();
+    synth.set_global(1, 0.001).unwrap();
+    synth.set_global(2, 1.0).unwrap();
+    synth.set_global(3, 0.01).unwrap();
+    let mut renderer = AudioRenderer::new(synth.clone(), 48_000.0, 21).unwrap();
+    let mut frames = [[0.0; 2]; 512];
+    synth.note_on(60, 1).unwrap();
+    renderer.render(&mut frames);
+    synth.note_on(64, 127).unwrap();
+    renderer.render(&mut frames);
+    assert_eq!(renderer.active_voice_count(), 1);
+    synth.note_off(64).unwrap();
+    renderer.render(&mut frames);
+    assert_eq!(renderer.active_voice_count(), 1);
+    assert!(synth.telemetry().key_track.abs() < 1e-5);
+    assert!((synth.telemetry().velocity - 1.0 / 127.0).abs() < 1e-5);
+    assert!(frames.iter().flatten().any(|sample| sample.abs() > 0.0001));
+}
+
+#[test]
 fn oscillator_sync_round_trips_and_changes_rendered_audio() {
     let free = Synth::new();
     let synced = Synth::new();
