@@ -824,3 +824,35 @@ fn set_always_glide_slides_staccato_rendered_audio() {
     assert_ne!(a, b);
     assert!(b.iter().all(|s| s.is_finite()));
 }
+
+#[test]
+fn set_drive_round_trips_and_changes_rendered_audio() {
+    let dry = Synth::new();
+    let wet = Synth::new();
+    wet.set_drive(0.8).unwrap();
+    assert_eq!(wet.voice_params().unwrap().drive, 0.8);
+    assert_eq!(dry.voice_params().unwrap().drive, 0.0);
+    assert!(wet.set_drive(-0.1).is_err());
+    assert!(wet.set_drive(1.1).is_err());
+    assert!(wet.set_drive(f32::NAN).is_err());
+    assert_eq!(wet.voice_params().unwrap().drive, 0.8);
+
+    dry.set_global(0, 0.001).unwrap();
+    dry.set_global(1, 0.001).unwrap();
+    dry.set_global(2, 1.0).unwrap();
+    wet.set_global(0, 0.001).unwrap();
+    wet.set_global(1, 0.001).unwrap();
+    wet.set_global(2, 1.0).unwrap();
+
+    dry.note_on(48, 127).unwrap();
+    wet.note_on(48, 127).unwrap();
+    let mut dry_r = AudioRenderer::new(dry, 48_000.0, 7).unwrap();
+    let mut wet_r = AudioRenderer::new(wet, 48_000.0, 7).unwrap();
+    let mut a = [0.0_f32; 4096];
+    let mut b = [0.0_f32; 4096];
+    dry_r.render_interleaved(&mut a, 2);
+    wet_r.render_interleaved(&mut b, 2);
+    assert_ne!(a, b);
+    assert!(b.iter().all(|s| s.is_finite()));
+    assert!(b.iter().any(|s| *s != 0.0));
+}

@@ -29,7 +29,7 @@
 //!
 //! [`Voice`] wraps the unchanged oscillator bank with independent AMP and MOD
 //! ADSRs, a free or retriggered LFO, a stereo state-variable filter
-//! (lowpass/bandpass/highpass), a white-noise mixer into that filter
+//! (lowpass/bandpass/highpass) with optional pre-filter tanh drive, a white-noise mixer into that filter
 //! and a modulation matrix.
 //! Targets 0..26 are the nine oscillator knobs per oscillator (pitch, fine,
 //! phase, random phase, pulse width, unison, detune, pan, level); 27 is master
@@ -49,7 +49,7 @@
 //! aftertouch are live unipolar 0..=1 sources, independent of velocity and key tracking.
 //! Route depths represent
 //! normalized target travel, not a percentage of exact cutoff tracking.
-//! Filter coefficients and master gain are smoothed over 3 ms; modulation runs at approximately
+//! Filter coefficients, master gain and pre-filter drive are smoothed over 3 ms; modulation runs at approximately
 //! 1 kHz, without recomputing unchanged oscillator coefficients.
 //! [`PolySynth`] supplies eight independent voices, MIDI note/velocity events,
 //! channel pitch bend, damper sustain, channel mod wheel, channel aftertouch, always-glide, selective release, last-note-priority legato, deterministic stealing and a bounded stereo mix.

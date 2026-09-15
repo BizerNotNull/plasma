@@ -171,6 +171,15 @@ impl Synth {
         })
     }
 
+    /// Pre-filter tanh drive, 0..=1. Zero is linear (no saturator). Independent
+    /// of oscillator levels and the noise mixer.
+    pub fn set_drive(&self, amount: f32) -> Result<(), Error> {
+        self.update(|c| {
+            c.params.drive = amount;
+            Ok(())
+        })
+    }
+
     /// Hard-sync this oscillator to oscillator 0. Index 0 is stored but ignored.
     pub fn set_sync(&self, index: usize, sync: bool) -> Result<(), Error> {
         self.update(|c| {

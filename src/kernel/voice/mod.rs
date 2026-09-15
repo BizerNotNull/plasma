@@ -6,6 +6,8 @@
 //! are sampled at the next trigger; unison modulation rounds to whole voices.
 //! White noise is mixed with the oscillator bank before the filter. Unison stereo
 //! spread, FM, ring (including oscillator 0 self-mod), noise, glide and oscillator 1/2 hard-sync amounts are modulation targets; bases stay unchanged. Always-glide slides retriggers from the previous pitch; fingered glide still requires overlapping legato.
+//! Pre-filter tanh drive (0..=1) saturates the oscillator/noise mix into the
+//! SVF; zero is linear and does not run the saturator.
 
 mod envelope;
 mod filter;
@@ -43,6 +45,8 @@ pub struct Voice {
     target_hz: f64,
     glide_remaining: f64,
     noise: dsp::Random,
+    drive: f64,
+    target_drive: f64,
 }
 
 impl Voice {
@@ -72,6 +76,8 @@ impl Voice {
             target_hz: 0.0,
             glide_remaining: 0.0,
             noise: dsp::Random::new(seed ^ 0xD1B54A32D192ED03),
+            drive: 0.0,
+            target_drive: 0.0,
         };
         voice.control_tick();
         voice.g = voice.target_g;
@@ -228,6 +234,7 @@ impl Voice {
         self.target_g = (std::f64::consts::PI * cutoff / self.sample_rate).tan();
         self.target_k = 2.0 - 1.9 * self.effective_globals[7] as f64;
         let _ = self.bank.set_frequency(self.playback_hz());
+        self.target_drive = f64::from(self.params.drive).clamp(0.0, 1.0);
     }
 
     fn glide_seconds(&self) -> f64 {
@@ -349,6 +356,10 @@ impl Voice {
         self.g += (self.target_g - self.g) * self.smooth;
         self.k += (self.target_k - self.k) * self.smooth;
         self.gain += (self.telemetry.effective[27] as f64 * 0.8 / 3.0 - self.gain) * self.smooth;
+        self.drive += (self.target_drive - self.drive) * self.smooth;
+        if self.drive < 1e-24 {
+            self.drive = 0.0;
+        }
         if self.is_silent() {
             self.filters[0] = Lowpass::default();
             self.filters[1] = Lowpass::default();
@@ -361,12 +372,13 @@ impl Voice {
             0.0
         };
         std::array::from_fn(|i| {
-            (self.filters[i].next(
-                frame[i] as f64 + noise,
-                self.g,
-                self.k,
-                self.params.filter_mode,
-            ) * self.gain
+            let mut input = frame[i] as f64 + noise;
+            if self.drive > 0.0 {
+                let wet = (input * (1.0 + 15.0 * self.drive)).tanh();
+                input += (wet - input) * self.drive;
+            }
+            (self.filters[i].next(input, self.g, self.k, self.params.filter_mode)
+                * self.gain
                 * self.telemetry.env as f64) as f32
         })
     }

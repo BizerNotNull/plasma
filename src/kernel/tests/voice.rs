@@ -1257,3 +1257,122 @@ fn always_glide_slides_without_legato_and_retriggers_amp() {
     fingered.note_on(440.0, 127).unwrap();
     assert!((fingered.frequency() - 440.0).abs() < 1e-9);
 }
+
+#[test]
+fn drive_zeroing_restores_linear_path() {
+    let mut linear = Voice::new(48000.0, 19).unwrap();
+    let mut returning = Voice::new(48000.0, 19).unwrap();
+    let mut params = VoiceParams::default();
+    params.oscillators[0].waveform = Waveform::Saw;
+    params.globals[..4].copy_from_slice(&[0.001, 0.001, 1.0, 0.2]);
+    linear.set_params(params).unwrap();
+    params.drive = 1.0;
+    returning.set_params(params).unwrap();
+    for _ in 0..4800 {
+        linear.next_frame();
+        returning.next_frame();
+    }
+    params.drive = 0.0;
+    returning.set_params(params).unwrap();
+    for _ in 0..12_000 {
+        linear.next_frame();
+        returning.next_frame();
+    }
+    linear.note_on(220.0, 127).unwrap();
+    returning.note_on(220.0, 127).unwrap();
+    for _ in 0..2048 {
+        assert_eq!(linear.next_frame(), returning.next_frame());
+    }
+}
+
+#[test]
+fn zero_drive_matches_default_oscillator_audio() {
+    let mut plain = Voice::new(48000.0, 19).unwrap();
+    let mut zero = Voice::new(48000.0, 19).unwrap();
+    let mut params = VoiceParams::default();
+    params.oscillators[0].waveform = Waveform::Saw;
+    params.globals[..4].copy_from_slice(&[0.001, 0.001, 1.0, 0.2]);
+    plain.set_params(params).unwrap();
+    params.drive = 0.0;
+    zero.set_params(params).unwrap();
+    plain.note_on(220.0, 127).unwrap();
+    zero.note_on(220.0, 127).unwrap();
+    for _ in 0..2048 {
+        assert_eq!(plain.next_frame(), zero.next_frame());
+    }
+}
+
+#[test]
+fn filter_drive_changes_audio_without_changing_oscillator_bases() {
+    let mut dry = Voice::new(48000.0, 21).unwrap();
+    let mut wet = Voice::new(48000.0, 21).unwrap();
+    let mut params = VoiceParams::default();
+    params.oscillators[0].waveform = Waveform::Saw;
+    params.globals[..4].copy_from_slice(&[0.001, 0.001, 1.0, 0.2]);
+    params.globals[6] = 800.0;
+    params.globals[7] = 0.4;
+    dry.set_params(params).unwrap();
+    params.drive = 0.85;
+    wet.set_params(params).unwrap();
+    params.drive = 1.1;
+    assert!(wet.set_params(params).is_err());
+    assert_eq!(wet.params().drive, 0.85);
+    params.drive = f32::NAN;
+    assert!(wet.set_params(params).is_err());
+    assert_eq!(wet.params().drive, 0.85);
+    params.drive = f32::INFINITY;
+    assert!(wet.set_params(params).is_err());
+    assert_eq!(wet.params().drive, 0.85);
+    assert_eq!(wet.params().oscillators[0].level, 1.0);
+
+    dry.note_on(110.0, 127).unwrap();
+    wet.note_on(110.0, 127).unwrap();
+    let mut same = true;
+    let mut peak = 0.0_f32;
+    for _ in 0..4800 {
+        let a = dry.next_frame();
+        let b = wet.next_frame();
+        assert!(b.iter().all(|s| s.is_finite() && s.abs() <= 1.0));
+        same &= a == b;
+        peak = peak.max(b[0].abs());
+    }
+    assert!(!same);
+    assert!(peak > 0.01);
+}
+
+#[test]
+fn filter_drive_adds_harmonics_and_stays_finite_when_resonant() {
+    fn treble(frames: &[[f32; 2]]) -> f64 {
+        let mut s = 0.0;
+        let mut e = 0.0;
+        let a = 1.0 - (-std::f64::consts::TAU * 2000.0 / 48000.0).exp();
+        for f in frames {
+            let hp = f[0] as f64 - s;
+            s += a * hp;
+            e += hp * hp;
+        }
+        e / frames.len() as f64
+    }
+
+    fn render(drive: f32, resonance: f32) -> Vec<[f32; 2]> {
+        let mut voice = Voice::new(48000.0, 23).unwrap();
+        let mut p = VoiceParams::default();
+        p.oscillators[0].waveform = Waveform::Sine;
+        p.globals[..4].copy_from_slice(&[0.001, 0.001, 1.0, 0.2]);
+        p.globals[6] = 18000.0;
+        p.globals[7] = resonance;
+        p.drive = drive;
+        voice.set_params(p).unwrap();
+        voice.note_on(110.0, 127).unwrap();
+        for _ in 0..2400 {
+            voice.next_frame();
+        }
+        (0..4800).map(|_| voice.next_frame()).collect()
+    }
+
+    let dry = render(0.0, 0.1);
+    let wet = render(1.0, 0.1);
+    let hot = render(1.0, 0.95);
+    assert!(treble(&wet) > treble(&dry) * 2.0);
+    assert!(hot.iter().all(|f| f.iter().all(|s| s.is_finite() && s.abs() <= 1.0)));
+}

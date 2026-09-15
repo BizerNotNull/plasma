@@ -9,8 +9,10 @@ pub(crate) struct Controls {
     pub(crate) params: VoiceParams,
 }
 
+// Extra scalars: volume, lfo_wave, lfo_retrigger, filter_mode, glide, legato,
+// always_glide, sustain, pitch_bend, pitch_bend_range, mod_wheel, aftertouch, noise, drive.
 const WORDS: usize =
-    OSCILLATOR_COUNT * 10 + 13 + 4 * OSCILLATOR_COUNT + GLOBAL_COUNT + SOURCE_COUNT * TARGET_COUNT;
+    OSCILLATOR_COUNT * 10 + 14 + 4 * OSCILLATOR_COUNT + GLOBAL_COUNT + SOURCE_COUNT * TARGET_COUNT;
 
 pub(crate) struct Published {
     version: AtomicU64,
@@ -78,6 +80,8 @@ impl Published {
         words[n] = (c.params.aftertouch as f64).to_bits();
         n += 1;
         words[n] = (c.params.noise as f64).to_bits();
+        n += 1;
+        words[n] = (c.params.drive as f64).to_bits();
         n += 1;
         for s in c.params.sync {
             words[n] = u64::from(s);
@@ -176,6 +180,8 @@ impl Published {
         c.params.aftertouch = f64::from_bits(words[n]) as f32;
         n += 1;
         c.params.noise = f64::from_bits(words[n]) as f32;
+        n += 1;
+        c.params.drive = f64::from_bits(words[n]) as f32;
         n += 1;
         for s in &mut c.params.sync {
             *s = words[n] != 0;

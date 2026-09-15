@@ -104,6 +104,8 @@ pub struct VoiceParams {
     pub aftertouch: f32,
     /// White noise mixed into the filter, 0..=1. Independent of oscillator levels.
     pub noise: f32,
+    /// Pre-filter tanh drive, 0..=1. Zero leaves the SVF input linear.
+    pub drive: f32,
     /// Hard-sync each oscillator to oscillator 0's first unison wrap. Index 0 is ignored.
     /// Targets 51 and 52 (oscillators 1 and 2) threshold at 0.5; bases stay boolean.
     pub sync: [bool; OSCILLATOR_COUNT],
@@ -140,6 +142,7 @@ impl Default for VoiceParams {
             mod_wheel: 0.0,
             aftertouch: 0.0,
             noise: 0.0,
+            drive: 0.0,
             sync: [false; OSCILLATOR_COUNT],
             fm: [0.0; OSCILLATOR_COUNT],
             ring: [0.0; OSCILLATOR_COUNT],
@@ -181,6 +184,9 @@ impl VoiceParams {
         }
         if !self.noise.is_finite() || !(0.0..=1.0).contains(&self.noise) {
             return Err(Error::InvalidParameter("noise"));
+        }
+        if !self.drive.is_finite() || !(0.0..=1.0).contains(&self.drive) {
+            return Err(Error::InvalidParameter("drive"));
         }
         if !self.pitch_bend.is_finite() || !(-1.0..=1.0).contains(&self.pitch_bend) {
             return Err(Error::InvalidParameter("pitch bend"));
