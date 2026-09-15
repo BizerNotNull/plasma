@@ -188,6 +188,15 @@ impl Synth {
         })
     }
 
+    /// Filter cutoff key follow, 0..=1. One tracks one octave per octave around
+    /// MIDI 60 (`cutoff * 2^(5 * key_track)`). Zero (default) leaves cutoff untracked.
+    pub fn set_keyfollow(&self, amount: f32) -> Result<(), Error> {
+        self.update(|c| {
+            c.params.keyfollow = amount;
+            Ok(())
+        })
+    }
+
     /// Hard-sync this oscillator to oscillator 0. Index 0 is stored but ignored.
     pub fn set_sync(&self, index: usize, sync: bool) -> Result<(), Error> {
         self.update(|c| {

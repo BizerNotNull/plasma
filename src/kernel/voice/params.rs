@@ -109,6 +109,10 @@ pub struct VoiceParams {
     /// Cascade a second stereo SVF after the first (24 dB/oct). Off (default)
     /// is the single 12 dB/oct stage. Not a modulation target.
     pub four_pole: bool,
+    /// Filter cutoff key follow, 0..=1. One scales the modulated cutoff by
+    /// `2^(5 * key_track)` so one octave above MIDI 60 doubles cutoff. Zero
+    /// leaves cutoff unchanged. Not a modulation target.
+    pub keyfollow: f32,
     /// Hard-sync each oscillator to oscillator 0's first unison wrap. Index 0 is ignored.
     /// Targets 51 and 52 (oscillators 1 and 2) threshold at 0.5; bases stay boolean.
     pub sync: [bool; OSCILLATOR_COUNT],
@@ -147,6 +151,7 @@ impl Default for VoiceParams {
             noise: 0.0,
             drive: 0.0,
             four_pole: false,
+            keyfollow: 0.0,
             sync: [false; OSCILLATOR_COUNT],
             fm: [0.0; OSCILLATOR_COUNT],
             ring: [0.0; OSCILLATOR_COUNT],
@@ -191,6 +196,9 @@ impl VoiceParams {
         }
         if !self.drive.is_finite() || !(0.0..=1.0).contains(&self.drive) {
             return Err(Error::InvalidParameter("drive"));
+        }
+        if !self.keyfollow.is_finite() || !(0.0..=1.0).contains(&self.keyfollow) {
+            return Err(Error::InvalidParameter("keyfollow"));
         }
         if !self.pitch_bend.is_finite() || !(-1.0..=1.0).contains(&self.pitch_bend) {
             return Err(Error::InvalidParameter("pitch bend"));

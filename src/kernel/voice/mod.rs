@@ -9,7 +9,9 @@
 //! Pre-filter tanh drive (0..=1) saturates the oscillator/noise mix into the
 //! SVF; zero is linear and does not run the saturator. An optional second stereo
 //! SVF stage (24 dB/oct) cascades after the first; off is the single 12 dB/oct
-//! stage and does not run the extra filters.
+//! stage and does not run the extra filters. Filter keyfollow (0..=1) scales the
+//! modulated cutoff by `2^(5 * keyfollow * key_track)` so full follow tracks
+//! one octave per octave around MIDI 60; zero is the untracked cutoff.
 
 mod envelope;
 mod filter;
@@ -237,7 +239,12 @@ impl Voice {
                 self.telemetry.effective[50 + i] = if on { 1.0 } else { 0.0 };
             }
         }
-        let cutoff = (self.effective_globals[6] as f64).min(self.sample_rate * 0.45);
+        let mut cutoff = self.effective_globals[6] as f64;
+        let follow = f64::from(self.params.keyfollow);
+        if follow > 0.0 {
+            cutoff *= 2.0_f64.powf(5.0 * follow * f64::from(self.telemetry.key_track));
+        }
+        let cutoff = cutoff.min(self.sample_rate * 0.45);
         self.target_g = (std::f64::consts::PI * cutoff / self.sample_rate).tan();
         self.target_k = 2.0 - 1.9 * self.effective_globals[7] as f64;
         let _ = self.bank.set_frequency(self.playback_hz());

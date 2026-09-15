@@ -11,9 +11,9 @@ pub(crate) struct Controls {
 
 // Extra scalars: volume, lfo_wave, lfo_retrigger, filter_mode, glide, legato,
 // always_glide, sustain, pitch_bend, pitch_bend_range, mod_wheel, aftertouch,
-// noise, drive, four_pole.
+// noise, drive, four_pole, keyfollow.
 const WORDS: usize =
-    OSCILLATOR_COUNT * 10 + 15 + 4 * OSCILLATOR_COUNT + GLOBAL_COUNT + SOURCE_COUNT * TARGET_COUNT;
+    OSCILLATOR_COUNT * 10 + 16 + 4 * OSCILLATOR_COUNT + GLOBAL_COUNT + SOURCE_COUNT * TARGET_COUNT;
 
 pub(crate) struct Published {
     version: AtomicU64,
@@ -85,6 +85,8 @@ impl Published {
         words[n] = (c.params.drive as f64).to_bits();
         n += 1;
         words[n] = u64::from(c.params.four_pole);
+        n += 1;
+        words[n] = (c.params.keyfollow as f64).to_bits();
         n += 1;
         for s in c.params.sync {
             words[n] = u64::from(s);
@@ -187,6 +189,8 @@ impl Published {
         c.params.drive = f64::from_bits(words[n]) as f32;
         n += 1;
         c.params.four_pole = words[n] != 0;
+        n += 1;
+        c.params.keyfollow = f64::from_bits(words[n]) as f32;
         n += 1;
         for s in &mut c.params.sync {
             *s = words[n] != 0;

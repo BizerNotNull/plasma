@@ -50,6 +50,9 @@
 //! aftertouch are live unipolar 0..=1 sources, independent of velocity and key tracking.
 //! Route depths represent
 //! normalized target travel, not a percentage of exact cutoff tracking.
+//! [`VoiceParams::keyfollow`] (0..=1, default 0) does that tracking: full follow
+//! multiplies the modulated cutoff by `2^(5 * key_track)` (one octave per octave
+//! around MIDI 60) and is not a modulation target.
 //! Filter coefficients, master gain and pre-filter drive are smoothed over 3 ms; modulation runs at approximately
 //! 1 kHz, without recomputing unchanged oscillator coefficients.
 //! [`PolySynth`] supplies eight independent voices, MIDI note/velocity events,

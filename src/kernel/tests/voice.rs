@@ -1516,3 +1516,121 @@ fn four_pole_keeps_independent_stereo_channels() {
     assert!(left > 0.01);
     assert!(right < left * 0.05);
 }
+
+#[test]
+fn default_keyfollow_is_zero_and_matches_explicit_zero() {
+    assert_eq!(VoiceParams::default().keyfollow, 0.0);
+
+    let mut plain = Voice::new(48000.0, 19).unwrap();
+    let mut zero = Voice::new(48000.0, 19).unwrap();
+    let mut params = VoiceParams::default();
+    params.oscillators[0].waveform = Waveform::Saw;
+    params.globals[..4].copy_from_slice(&[0.001, 0.001, 1.0, 0.2]);
+    params.globals[6] = 800.0;
+    plain.set_params(params).unwrap();
+    params.keyfollow = 0.0;
+    zero.set_params(params).unwrap();
+    plain.note_on(110.0, 127).unwrap();
+    zero.note_on(110.0, 127).unwrap();
+    for _ in 0..2048 {
+        assert_eq!(plain.next_frame(), zero.next_frame());
+    }
+}
+
+#[test]
+fn keyfollow_at_midi_60_is_identity() {
+    let hz = 440.0 * 2.0_f64.powf(-9.0 / 12.0);
+    let mut off = Voice::new(48000.0, 21).unwrap();
+    let mut on = Voice::new(48000.0, 21).unwrap();
+    let mut params = VoiceParams::default();
+    params.oscillators[0].waveform = Waveform::Saw;
+    params.globals[..4].copy_from_slice(&[0.001, 0.001, 1.0, 0.2]);
+    params.globals[6] = 900.0;
+    off.set_params(params).unwrap();
+    params.keyfollow = 1.0;
+    on.set_params(params).unwrap();
+    off.note_on(hz, 127).unwrap();
+    on.note_on(hz, 127).unwrap();
+    assert!(on.telemetry().key_track.abs() < 1e-6);
+    for _ in 0..2048 {
+        assert_eq!(off.next_frame(), on.next_frame());
+    }
+}
+
+#[test]
+fn keyfollow_one_matches_octave_scaled_cutoff() {
+    let hz = 880.0_f64;
+    let key = ((69.0 + 12.0 * (hz.log2() - 440.0_f64.log2()) - 60.0) / 60.0) as f32;
+    let base = 500.0_f32;
+    let tracked = base * 2.0_f32.powf(5.0 * key);
+
+    fn render(cutoff: f32, keyfollow: f32, hz: f64) -> Vec<[f32; 2]> {
+        let mut voice = Voice::new(48000.0, 23).unwrap();
+        let mut p = VoiceParams::default();
+        p.oscillators[0].waveform = Waveform::Saw;
+        p.globals[..4].copy_from_slice(&[0.001, 0.001, 1.0, 0.2]);
+        p.globals[6] = cutoff;
+        p.globals[7] = 0.2;
+        p.keyfollow = keyfollow;
+        voice.set_params(p).unwrap();
+        voice.note_on(hz, 127).unwrap();
+        for _ in 0..4800 {
+            voice.next_frame();
+        }
+        (0..1024).map(|_| voice.next_frame()).collect()
+    }
+
+    let followed = render(base, 1.0, hz);
+    let scaled = render(tracked, 0.0, hz);
+    for (a, b) in followed.iter().zip(&scaled) {
+        assert!((a[0] - b[0]).abs() < 1e-4 && (a[1] - b[1]).abs() < 1e-4);
+    }
+}
+
+#[test]
+fn keyfollow_darkens_bass_and_rejects_out_of_range() {
+    let mut off = Voice::new(48000.0, 21).unwrap();
+    let mut on = Voice::new(48000.0, 21).unwrap();
+    let mut params = VoiceParams::default();
+    params.oscillators[0].waveform = Waveform::Saw;
+    params.globals[..4].copy_from_slice(&[0.001, 0.001, 1.0, 0.2]);
+    params.globals[6] = 600.0;
+    params.globals[7] = 0.15;
+    off.set_params(params).unwrap();
+    params.keyfollow = 1.0;
+    on.set_params(params).unwrap();
+    params.keyfollow = 1.1;
+    assert!(on.set_params(params).is_err());
+    assert_eq!(on.params().keyfollow, 1.0);
+    params.keyfollow = -0.1;
+    assert!(on.set_params(params).is_err());
+    params.keyfollow = f32::NAN;
+    assert!(on.set_params(params).is_err());
+    assert_eq!(on.params().keyfollow, 1.0);
+    assert_eq!(on.params().oscillators[0].level, 1.0);
+
+    off.note_on(110.0, 127).unwrap();
+    on.note_on(110.0, 127).unwrap();
+    assert!(on.telemetry().key_track < 0.0);
+
+    fn treble(frames: &[[f32; 2]]) -> f64 {
+        let mut s = 0.0;
+        let mut e = 0.0;
+        let a = 1.0 - (-std::f64::consts::TAU * 2000.0 / 48000.0).exp();
+        for f in frames {
+            let hp = f[0] as f64 - s;
+            s += a * hp;
+            e += hp * hp;
+        }
+        e / frames.len() as f64
+    }
+
+    for _ in 0..2400 {
+        off.next_frame();
+        on.next_frame();
+    }
+    let dry: Vec<_> = (0..4800).map(|_| off.next_frame()).collect();
+    let wet: Vec<_> = (0..4800).map(|_| on.next_frame()).collect();
+    assert!(wet.iter().all(|f| f.iter().all(|s| s.is_finite() && s.abs() <= 1.0)));
+    assert!(treble(&wet) < treble(&dry) * 0.5);
+}

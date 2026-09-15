@@ -890,3 +890,40 @@ fn set_four_pole_round_trips_and_changes_rendered_audio() {
     assert!(b.iter().all(|s| s.is_finite()));
     assert!(b.iter().any(|s| *s != 0.0));
 }
+
+#[test]
+fn set_keyfollow_round_trips_and_changes_rendered_audio() {
+    let off = Synth::new();
+    let on = Synth::new();
+    on.set_keyfollow(1.0).unwrap();
+    assert_eq!(on.voice_params().unwrap().keyfollow, 1.0);
+    assert_eq!(off.voice_params().unwrap().keyfollow, 0.0);
+    assert!(on.set_keyfollow(-0.1).is_err());
+    assert!(on.set_keyfollow(1.1).is_err());
+    assert!(on.set_keyfollow(f32::NAN).is_err());
+    assert_eq!(on.voice_params().unwrap().keyfollow, 1.0);
+    on.set_keyfollow(0.0).unwrap();
+    assert_eq!(on.voice_params().unwrap().keyfollow, 0.0);
+    on.set_keyfollow(1.0).unwrap();
+
+    off.set_global(0, 0.001).unwrap();
+    off.set_global(1, 0.001).unwrap();
+    off.set_global(2, 1.0).unwrap();
+    off.set_global(6, 600.0).unwrap();
+    on.set_global(0, 0.001).unwrap();
+    on.set_global(1, 0.001).unwrap();
+    on.set_global(2, 1.0).unwrap();
+    on.set_global(6, 600.0).unwrap();
+
+    off.note_on(40, 127).unwrap();
+    on.note_on(40, 127).unwrap();
+    let mut off_r = AudioRenderer::new(off, 48_000.0, 7).unwrap();
+    let mut on_r = AudioRenderer::new(on, 48_000.0, 7).unwrap();
+    let mut a = [0.0_f32; 4096];
+    let mut b = [0.0_f32; 4096];
+    off_r.render_interleaved(&mut a, 2);
+    on_r.render_interleaved(&mut b, 2);
+    assert_ne!(a, b);
+    assert!(b.iter().all(|s| s.is_finite()));
+    assert!(b.iter().any(|s| *s != 0.0));
+}
