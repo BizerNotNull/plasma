@@ -7,7 +7,9 @@
 //! White noise is mixed with the oscillator bank before the filter. Unison stereo
 //! spread, FM, ring (including oscillator 0 self-mod), noise, glide and oscillator 1/2 hard-sync amounts are modulation targets; bases stay unchanged. Always-glide slides retriggers from the previous pitch; fingered glide still requires overlapping legato.
 //! Pre-filter tanh drive (0..=1) saturates the oscillator/noise mix into the
-//! SVF; zero is linear and does not run the saturator.
+//! SVF; zero is linear and does not run the saturator. An optional second stereo
+//! SVF stage (24 dB/oct) cascades after the first; off is the single 12 dB/oct
+//! stage and does not run the extra filters.
 
 mod envelope;
 mod filter;
@@ -35,6 +37,7 @@ pub struct Voice {
     lfo_phase: f64,
     effective_globals: [f32; GLOBAL_COUNT],
     filters: [Lowpass; 2],
+    cascade: [Lowpass; 2],
     gain: f64,
     g: f64,
     k: f64,
@@ -66,6 +69,7 @@ impl Voice {
             lfo_phase: 0.0,
             effective_globals: GLOBAL_DEFAULTS,
             filters: std::array::from_fn(|_| Lowpass::default()),
+            cascade: std::array::from_fn(|_| Lowpass::default()),
             gain: 0.0,
             g: 0.0,
             k: 1.0,
@@ -92,6 +96,9 @@ impl Voice {
     pub fn set_params(&mut self, params: VoiceParams) -> Result<(), Error> {
         params.validate()?;
         if params != self.params {
+            if params.four_pole != self.params.four_pole {
+                self.cascade = std::array::from_fn(|_| Lowpass::default());
+            }
             self.base = params.normalized();
             self.telemetry.mod_wheel = params.mod_wheel;
             self.telemetry.aftertouch = params.aftertouch;
@@ -290,6 +297,7 @@ impl Voice {
         self.telemetry.velocity = 0.0;
         self.telemetry.key_track = 0.0;
         self.filters = std::array::from_fn(|_| Lowpass::default());
+        self.cascade = std::array::from_fn(|_| Lowpass::default());
         self.current_hz = 0.0;
         self.target_hz = 0.0;
         self.glide_remaining = 0.0;
@@ -363,6 +371,8 @@ impl Voice {
         if self.is_silent() {
             self.filters[0] = Lowpass::default();
             self.filters[1] = Lowpass::default();
+            self.cascade[0] = Lowpass::default();
+            self.cascade[1] = Lowpass::default();
             return [0.0; 2];
         }
         let frame = self.bank.next_frame();
@@ -377,9 +387,11 @@ impl Voice {
                 let wet = (input * (1.0 + 15.0 * self.drive)).tanh();
                 input += (wet - input) * self.drive;
             }
-            (self.filters[i].next(input, self.g, self.k, self.params.filter_mode)
-                * self.gain
-                * self.telemetry.env as f64) as f32
+            let mut y = self.filters[i].next(input, self.g, self.k, self.params.filter_mode);
+            if self.params.four_pole {
+                y = self.cascade[i].next(y, self.g, self.k, self.params.filter_mode);
+            }
+            (y * self.gain * self.telemetry.env as f64) as f32
         })
     }
 

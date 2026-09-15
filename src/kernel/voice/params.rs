@@ -106,6 +106,9 @@ pub struct VoiceParams {
     pub noise: f32,
     /// Pre-filter tanh drive, 0..=1. Zero leaves the SVF input linear.
     pub drive: f32,
+    /// Cascade a second stereo SVF after the first (24 dB/oct). Off (default)
+    /// is the single 12 dB/oct stage. Not a modulation target.
+    pub four_pole: bool,
     /// Hard-sync each oscillator to oscillator 0's first unison wrap. Index 0 is ignored.
     /// Targets 51 and 52 (oscillators 1 and 2) threshold at 0.5; bases stay boolean.
     pub sync: [bool; OSCILLATOR_COUNT],
@@ -143,6 +146,7 @@ impl Default for VoiceParams {
             aftertouch: 0.0,
             noise: 0.0,
             drive: 0.0,
+            four_pole: false,
             sync: [false; OSCILLATOR_COUNT],
             fm: [0.0; OSCILLATOR_COUNT],
             ring: [0.0; OSCILLATOR_COUNT],

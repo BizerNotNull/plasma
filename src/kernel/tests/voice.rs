@@ -1376,3 +1376,143 @@ fn filter_drive_adds_harmonics_and_stays_finite_when_resonant() {
     assert!(treble(&wet) > treble(&dry) * 2.0);
     assert!(hot.iter().all(|f| f.iter().all(|s| s.is_finite() && s.abs() <= 1.0)));
 }
+
+#[test]
+fn default_four_pole_is_off_and_matches_single_stage() {
+    assert!(!VoiceParams::default().four_pole);
+
+    let mut plain = Voice::new(48000.0, 19).unwrap();
+    let mut off = Voice::new(48000.0, 19).unwrap();
+    let mut params = VoiceParams::default();
+    params.oscillators[0].waveform = Waveform::Saw;
+    params.globals[..4].copy_from_slice(&[0.001, 0.001, 1.0, 0.2]);
+    params.globals[6] = 800.0;
+    plain.set_params(params).unwrap();
+    params.four_pole = false;
+    off.set_params(params).unwrap();
+    plain.note_on(220.0, 127).unwrap();
+    off.note_on(220.0, 127).unwrap();
+    for _ in 0..2048 {
+        assert_eq!(plain.next_frame(), off.next_frame());
+    }
+}
+
+#[test]
+fn four_pole_lowpass_steepens_rolloff_without_changing_bases() {
+    fn rms(frames: &[[f32; 2]]) -> f64 {
+        let e: f64 = frames.iter().map(|f| (f[0] as f64).powi(2)).sum();
+        (e / frames.len() as f64).sqrt()
+    }
+
+    fn render(four_pole: bool, hz: f64, cutoff: f32) -> Vec<[f32; 2]> {
+        let mut voice = Voice::new(48000.0, 21).unwrap();
+        let mut p = VoiceParams::default();
+        p.oscillators[0].waveform = Waveform::Sine;
+        p.globals[..4].copy_from_slice(&[0.001, 0.001, 1.0, 0.2]);
+        p.globals[6] = cutoff;
+        p.globals[7] = 0.1;
+        p.four_pole = four_pole;
+        voice.set_params(p).unwrap();
+        voice.note_on(hz, 127).unwrap();
+        for _ in 0..2400 {
+            voice.next_frame();
+        }
+        (0..4800).map(|_| voice.next_frame()).collect()
+    }
+
+    let two = render(false, 2000.0, 400.0);
+    let four = render(true, 2000.0, 400.0);
+    assert_ne!(two, four);
+    assert!(four.iter().all(|f| f.iter().all(|s| s.is_finite() && s.abs() <= 1.0)));
+    assert!(rms(&four) < rms(&two) * 0.5);
+    let pass_two = render(false, 110.0, 8000.0);
+    let pass_four = render(true, 110.0, 8000.0);
+    assert!((rms(&pass_four) - rms(&pass_two)).abs() < rms(&pass_two) * 0.05);
+    let mut voice = Voice::new(48000.0, 21).unwrap();
+    let mut params = VoiceParams::default();
+    params.four_pole = true;
+    voice.set_params(params).unwrap();
+    assert!(voice.params().four_pole);
+    assert_eq!(voice.params().oscillators[0].level, 1.0);
+}
+
+#[test]
+fn disabling_four_pole_restores_single_stage_audio() {
+    let mut linear = Voice::new(48000.0, 19).unwrap();
+    let mut returning = Voice::new(48000.0, 19).unwrap();
+    let mut params = VoiceParams::default();
+    params.oscillators[0].waveform = Waveform::Saw;
+    params.globals[..4].copy_from_slice(&[0.001, 0.001, 1.0, 0.2]);
+    params.globals[6] = 800.0;
+    linear.set_params(params).unwrap();
+    params.four_pole = true;
+    returning.set_params(params).unwrap();
+    linear.note_on(220.0, 127).unwrap();
+    returning.note_on(220.0, 127).unwrap();
+    let mut differed = false;
+    for _ in 0..2048 {
+        differed |= linear.next_frame() != returning.next_frame();
+    }
+    assert!(differed);
+    params.four_pole = false;
+    returning.set_params(params).unwrap();
+    for _ in 0..2048 {
+        assert_eq!(linear.next_frame(), returning.next_frame());
+    }
+}
+
+#[test]
+fn four_pole_stays_finite_when_resonant_with_drive() {
+    let mut voice = Voice::new(48000.0, 23).unwrap();
+    let mut p = VoiceParams::default();
+    p.oscillators[0].waveform = Waveform::Saw;
+    p.globals[..4].copy_from_slice(&[0.001, 0.001, 1.0, 0.2]);
+    p.globals[6] = 400.0;
+    p.globals[7] = 1.0;
+    p.four_pole = true;
+    p.drive = 1.0;
+    voice.set_params(p).unwrap();
+    voice.note_on(110.0, 127).unwrap();
+    for _ in 0..48000 {
+        assert!(
+            voice
+                .next_frame()
+                .iter()
+                .all(|s| s.is_finite() && s.abs() <= 1.0)
+        );
+    }
+    p.globals[6] = 18000.0;
+    voice.set_params(p).unwrap();
+    for _ in 0..4800 {
+        assert!(
+            voice
+                .next_frame()
+                .iter()
+                .all(|s| s.is_finite() && s.abs() <= 1.0)
+        );
+    }
+}
+
+#[test]
+fn four_pole_keeps_independent_stereo_channels() {
+    let mut voice = Voice::new(48000.0, 21).unwrap();
+    let mut p = VoiceParams::default();
+    p.oscillators[0].waveform = Waveform::Saw;
+    p.oscillators[0].pan = -1.0;
+    p.globals[..4].copy_from_slice(&[0.001, 0.001, 1.0, 0.2]);
+    p.globals[6] = 800.0;
+    p.globals[7] = 0.8;
+    p.four_pole = true;
+    voice.set_params(p).unwrap();
+    voice.note_on(220.0, 127).unwrap();
+    let mut left = 0.0_f32;
+    let mut right = 0.0_f32;
+    for _ in 0..4800 {
+        let frame = voice.next_frame();
+        assert!(frame.iter().all(|s| s.is_finite() && s.abs() <= 1.0));
+        left = left.max(frame[0].abs());
+        right = right.max(frame[1].abs());
+    }
+    assert!(left > 0.01);
+    assert!(right < left * 0.05);
+}

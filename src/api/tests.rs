@@ -856,3 +856,37 @@ fn set_drive_round_trips_and_changes_rendered_audio() {
     assert!(b.iter().all(|s| s.is_finite()));
     assert!(b.iter().any(|s| *s != 0.0));
 }
+
+#[test]
+fn set_four_pole_round_trips_and_changes_rendered_audio() {
+    let two = Synth::new();
+    let four = Synth::new();
+    four.set_four_pole(true).unwrap();
+    assert!(four.voice_params().unwrap().four_pole);
+    assert!(!two.voice_params().unwrap().four_pole);
+    four.set_four_pole(false).unwrap();
+    assert!(!four.voice_params().unwrap().four_pole);
+    four.set_four_pole(true).unwrap();
+    assert!(four.voice_params().unwrap().four_pole);
+
+    two.set_global(0, 0.001).unwrap();
+    two.set_global(1, 0.001).unwrap();
+    two.set_global(2, 1.0).unwrap();
+    two.set_global(6, 400.0).unwrap();
+    four.set_global(0, 0.001).unwrap();
+    four.set_global(1, 0.001).unwrap();
+    four.set_global(2, 1.0).unwrap();
+    four.set_global(6, 400.0).unwrap();
+
+    two.note_on(48, 127).unwrap();
+    four.note_on(48, 127).unwrap();
+    let mut two_r = AudioRenderer::new(two, 48_000.0, 7).unwrap();
+    let mut four_r = AudioRenderer::new(four, 48_000.0, 7).unwrap();
+    let mut a = [0.0_f32; 4096];
+    let mut b = [0.0_f32; 4096];
+    two_r.render_interleaved(&mut a, 2);
+    four_r.render_interleaved(&mut b, 2);
+    assert_ne!(a, b);
+    assert!(b.iter().all(|s| s.is_finite()));
+    assert!(b.iter().any(|s| *s != 0.0));
+}

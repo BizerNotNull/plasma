@@ -29,7 +29,8 @@
 //!
 //! [`Voice`] wraps the unchanged oscillator bank with independent AMP and MOD
 //! ADSRs, a free or retriggered LFO, a stereo state-variable filter
-//! (lowpass/bandpass/highpass) with optional pre-filter tanh drive, a white-noise mixer into that filter
+//! (lowpass/bandpass/highpass) with optional pre-filter tanh drive and an optional
+//! second SVF stage for 24 dB/oct, a white-noise mixer into that filter
 //! and a modulation matrix.
 //! Targets 0..26 are the nine oscillator knobs per oscillator (pitch, fine,
 //! phase, random phase, pulse width, unison, detune, pan, level); 27 is master

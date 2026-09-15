@@ -180,6 +180,14 @@ impl Synth {
         })
     }
 
+    /// Cascade a second stereo SVF (24 dB/oct). Off is the default 12 dB/oct stage.
+    pub fn set_four_pole(&self, four_pole: bool) -> Result<(), Error> {
+        self.update(|c| {
+            c.params.four_pole = four_pole;
+            Ok(())
+        })
+    }
+
     /// Hard-sync this oscillator to oscillator 0. Index 0 is stored but ignored.
     pub fn set_sync(&self, index: usize, sync: bool) -> Result<(), Error> {
         self.update(|c| {
